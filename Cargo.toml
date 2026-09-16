@@ -63,6 +63,14 @@ ml-randomness = { package = "randomness", git = "https://github.com/mintlayer/mi
 ml-serialization = { package = "serialization", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
 ml-tx-verifier = { package = "tx-verifier", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
 
+[[example]]
+name = "send-coins"
+required-features = ["crypto", "indexer"]
+
+[[example]]
+name = "issue-token"
+required-features = ["wallet"]
+
 [dev-dependencies]
 hex = "0.4"
 httpmock = "0.7"

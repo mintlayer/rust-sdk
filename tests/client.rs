@@ -149,7 +149,7 @@ async fn basic_auth_only_affects_rpc_clients() {
 
 #[test]
 fn prelude_reexports() {
-    assert_eq!(Amount::from_atoms(1u128).into_atoms() as u128, 1);
+    assert_eq!(Amount::from_atoms(1u128).into_atoms(), 1);
 
     let label = match Network::Mainnet {
         Network::Mainnet => "mainnet",

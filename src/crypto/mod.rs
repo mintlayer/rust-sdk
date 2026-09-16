@@ -108,8 +108,8 @@ pub mod types {
     pub use ml_common::chain::signature::inputsig::InputWitness;
     pub use ml_common::chain::{
         Destination, OutPointSourceId, SignedTransaction, Transaction, TxInput, TxOutput,
-        classic_multisig::ClassicMultisigChallenge, htlc::HtlcSecret, stakelock::StakePoolData,
-        timelock::OutputTimeLock,
+        classic_multisig::ClassicMultisigChallenge, htlc::HtlcSecret, output_value::OutputValue,
+        stakelock::StakePoolData, timelock::OutputTimeLock,
     };
     pub use ml_common::primitives::H256;
     pub use ml_crypto::key::{
