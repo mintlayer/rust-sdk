@@ -14,13 +14,3 @@ tarpaulin-report.html
 
 # ── misc ──────────────────────────────────────────────────────────────────────
 .wrangler/
-
-# ── secrets: never commit credentials or key material ────────────────────────
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.p12
-secrets/
-.cargo/credentials

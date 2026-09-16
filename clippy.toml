@@ -1,0 +1,5 @@
+disallowed-methods = []
+disallowed-types = []
+enforced-import-renames = []
+large-error-threshold = 256
+enum-variant-size-threshold = 256
