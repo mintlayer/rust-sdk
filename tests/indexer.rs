@@ -7,7 +7,9 @@
 //! Wire-format tests for the indexer client, mirroring the go-sdk
 //! `indexer/client_test.go` suite.
 
-use httpmock::Then;
+mod common;
+
+use common::respond;
 use httpmock::prelude::*;
 use serde_json::json;
 
@@ -16,24 +18,20 @@ use mintlayer_sdk::indexer::{
     UtxoOutpoint,
 };
 
-fn respond(then: Then, body: serde_json::Value) {
-    then.status(200)
-        .header("content-type", "application/json")
-        .body(body.to_string());
-}
-
 #[tokio::test]
 async fn tip_and_height_paths() {
     let server = MockServer::start();
     let tip_mock = server.mock(|when, then| {
         when.method(GET).path("/api/v2/chain/tip");
-        respond(then, json!({"block_height": 42000, "block_id": "0000ab"}));
+        respond(
+            then,
+            200,
+            json!({"block_height": 42000, "block_id": "0000ab"}).to_string(),
+        );
     });
     let height_mock = server.mock(|when, then| {
         when.method(GET).path("/api/v2/chain/1337");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(json!("0000cd").to_string());
+        respond(then, 200, json!("0000cd").to_string());
     });
 
     let client = Client::new(server.url(""));
@@ -54,6 +52,7 @@ async fn block_endpoints() {
         when.method(GET).path("/api/v2/block/0000aa");
         respond(
             then,
+            200,
             json!({
                 "height": 42000,
                 "header": {
@@ -67,7 +66,8 @@ async fn block_endpoints() {
                     "reward": [],
                     "transactions": []
                 }
-            }),
+            })
+            .to_string(),
         );
     });
 
@@ -93,14 +93,14 @@ async fn pagination_query_params() {
             .path("/api/v2/transaction")
             .query_param("offset", "10")
             .query_param("items", "20");
-        respond(then, json!([]));
+        respond(then, 200, json!([]).to_string());
     });
     let unpaginated = server.mock(|when, then| {
         when.method(GET).path("/api/v2/transaction").matches(|request| {
             let params = request.query_params.as_deref().unwrap_or(&[]);
             !params.iter().any(|(name, _)| *name == "offset" || *name == "items")
         });
-        respond(then, json!([]));
+        respond(then, 200, json!([]).to_string());
     });
 
     let client = Client::new(server.url(""));
@@ -132,6 +132,7 @@ async fn pool_list_sort_param() {
             });
         respond(
             then,
+            200,
             json!([{
                 "pool_id": "mpool1x",
                 "decommission_destination": "mtct1x",
@@ -140,7 +141,8 @@ async fn pool_list_sort_param() {
                 "cost_per_block": {"atoms": "1000", "decimal": "0.00000001"},
                 "vrf_public_key": "vrfpub1x",
                 "delegations_balance": {"atoms": "2000", "decimal": "0.00000002"}
-            }]),
+            }])
+            .to_string(),
         );
     });
 
@@ -193,7 +195,7 @@ async fn pool_block_stats_query() {
             .path("/api/v2/pool/mpool1x/block-stats")
             .query_param("from", "1700000000")
             .query_param("to", "1700003600");
-        respond(then, json!({"block_count": 42}));
+        respond(then, 200, json!({"block_count": 42}).to_string());
     });
 
     let client = Client::new(server.url(""));
@@ -211,7 +213,7 @@ async fn submit_transaction_posts_raw_hex() {
             .path("/api/v2/transaction")
             .header("content-type", "text/plain")
             .body("deadbeef");
-        respond(then, json!({"tx_id": "aabb"}));
+        respond(then, 200, json!({"tx_id": "aabb"}).to_string());
     });
 
     let client = Client::new(server.url(""));
@@ -250,6 +252,7 @@ async fn lenient_number_fields() {
         when.method(GET).path("/api/v2/delegation/tdelg1x");
         respond(
             then,
+            200,
             json!({
                 "delegation_id": "tdelg1x",
                 "pool_id": "mpool1x",
@@ -257,13 +260,15 @@ async fn lenient_number_fields() {
                 "spend_destination": "mtct1x",
                 "balance": {"atoms": "500", "decimal": "0.000000005"},
                 "creation_block_height": "10000"
-            }),
+            })
+            .to_string(),
         );
     });
     let numeric_delegation = server.mock(|when, then| {
         when.method(GET).path("/api/v2/delegation/tdelg2x");
         respond(
             then,
+            200,
             json!({
                 "delegation_id": "tdelg2x",
                 "pool_id": "mpool1x",
@@ -271,13 +276,15 @@ async fn lenient_number_fields() {
                 "spend_destination": "mtct1x",
                 "balance": {"atoms": 500, "decimal": "0.000000005"},
                 "creation_block_height": 10000
-            }),
+            })
+            .to_string(),
         );
     });
     let order_mock = server.mock(|when, then| {
         when.method(GET).path("/api/v2/order/mordr1x");
         respond(
             then,
+            200,
             json!({
                 "order_id": "mordr1x",
                 "conclude_destination": "mtct1x",
@@ -288,7 +295,8 @@ async fn lenient_number_fields() {
                 "initially_asked": {"atoms": "1", "decimal": "0.00000000001"},
                 "ask_balance": {"atoms": "1", "decimal": "0.00000000001"},
                 "nonce": "5"
-            }),
+            })
+            .to_string(),
         );
     });
 
@@ -324,10 +332,12 @@ async fn utxo_wire_key_is_utxo() {
         when.method(GET).path("/api/v2/address/mxtc1q/spendable-utxos");
         respond(
             then,
+            200,
             json!([{
                 "outpoint": {"source_id": "aabb", "index": 0},
                 "utxo": {"type": "Transfer"}
-            }]),
+            }])
+            .to_string(),
         );
     });
 
@@ -355,6 +365,7 @@ async fn unconfirmed_transaction_empty_string_fields() {
         when.method(GET).path("/api/v2/transaction/aabb");
         respond(
             then,
+            200,
             json!({
                 "id": "aabb",
                 "inputs": [],
@@ -362,7 +373,8 @@ async fn unconfirmed_transaction_empty_string_fields() {
                 "block_id": "",
                 "timestamp": "",
                 "confirmations": ""
-            }),
+            })
+            .to_string(),
         );
     });
 
@@ -383,15 +395,11 @@ async fn fee_rate_param_handling() {
         when.method(GET)
             .path("/api/v2/feerate")
             .matches(|request| request.query_params.as_deref().unwrap_or(&[]).is_empty());
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(json!("12.5").to_string());
+        respond(then, 200, json!("12.5").to_string());
     });
     let top_mock = server.mock(|when, then| {
         when.method(GET).path("/api/v2/feerate").query_param("in_top_x_mb", "5");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(json!("500").to_string());
+        respond(then, 200, json!("500").to_string());
     });
 
     let client = Client::new(server.url(""));
@@ -409,7 +417,11 @@ async fn base_url_trailing_slash_normalized() {
     let server = MockServer::start();
     let mock = server.mock(|when, then| {
         when.method(GET).path("/api/v2/chain/tip");
-        respond(then, json!({"block_height": 1, "block_id": "0000ab"}));
+        respond(
+            then,
+            200,
+            json!({"block_height": 1, "block_id": "0000ab"}).to_string(),
+        );
     });
 
     let client = Client::new(server.url("/") + "/");

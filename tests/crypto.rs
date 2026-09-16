@@ -8,7 +8,7 @@
 //! `wasm/client_test.go` suite and the wasm-wrappers test vectors.
 
 use mintlayer_sdk::crypto::types::{
-    DecodeAll, Encode, H256, InputWitness, PrivateKey, Transaction, TxInput, TxOutput,
+    DecodeAll, Encode, H256, HtlcSecret, InputWitness, PrivateKey, Transaction, TxInput, TxOutput,
 };
 use mintlayer_sdk::crypto::{
     Amount, Error, IsTokenUnfreezable, Network, SigHashType, SourceId, TxAdditionalInfo,
@@ -21,17 +21,21 @@ use mintlayer_sdk::crypto::{
     encode_input_for_unfreeze_token, encode_input_for_unmint_tokens, encode_input_for_utxo,
     encode_input_for_withdraw_from_delegation, encode_lock_for_block_count,
     encode_lock_for_seconds, encode_lock_until_height, encode_lock_until_time,
-    encode_outpoint_source_id, encode_output_create_stake_pool, encode_output_htlc,
-    encode_output_issue_nft, encode_output_transfer, encode_partially_signed_transaction,
-    encode_signed_transaction, encode_signed_transaction_intent, encode_stake_pool_data,
-    encode_transaction, encode_witness, encode_witness_no_signature, estimate_transaction_size,
+    encode_multisig_challenge, encode_outpoint_source_id, encode_output_create_stake_pool,
+    encode_output_htlc, encode_output_issue_nft, encode_output_transfer,
+    encode_partially_signed_transaction, encode_signed_transaction,
+    encode_signed_transaction_intent, encode_stake_pool_data, encode_transaction, encode_witness,
+    encode_witness_htlc_refund_multisig, encode_witness_htlc_refund_single_sig,
+    encode_witness_htlc_spend, encode_witness_no_signature, estimate_transaction_size,
+    extended_public_key_from_extended_private_key, extract_htlc_secret,
     fungible_token_issuance_fee, get_delegation_id, get_order_id, get_pool_id, get_token_id,
-    make_default_account_privkey, make_private_key, make_receiving_address,
-    make_transaction_intent_message_to_sign, nft_issuance_fee, pubkey_to_pubkeyhash_address,
-    public_key_from_private_key, sign_challenge, sign_message_for_spending,
-    staking_pool_spend_maturity_block_count, token_change_authority_fee, token_freeze_fee,
-    token_supply_change_fee, transaction_id, verify_challenge, verify_signature_for_spending,
-    verify_transaction_intent,
+    make_change_address, make_change_address_public_key, make_default_account_privkey,
+    make_private_key, make_receiving_address, make_receiving_address_public_key,
+    make_transaction_intent_message_to_sign, multisig_challenge_to_address, nft_issuance_fee,
+    pubkey_to_pubkeyhash_address, public_key_from_private_key, sign_challenge,
+    sign_message_for_spending, staking_pool_spend_maturity_block_count, token_change_authority_fee,
+    token_freeze_fee, token_supply_change_fee, transaction_id, verify_challenge,
+    verify_signature_for_spending, verify_transaction_intent,
 };
 
 const MNEMONIC: &str = "walk exile faculty near leg neutral license matrix maple invite cupboard hat opinion excess coffee leopard latin regret document core limb crew dizzy movie";
@@ -72,6 +76,40 @@ fn fake_utxo_transaction(private_key: PrivateKey) -> (PrivateKey, String, Transa
     let input = encode_input_for_utxo(source_id, 0);
     let transaction = encode_transaction(vec![input], vec![output.clone()], 0).unwrap();
     (private_key, address, transaction, output)
+}
+
+fn fixed_signing_key() -> (PrivateKey, String) {
+    let key = <PrivateKey as DecodeAll>::decode_all(
+        &mut &hex::decode(FIXED_SIGNING_PRIVKEY).unwrap()[..],
+    )
+    .expect("fixed private key must decode");
+    let address =
+        pubkey_to_pubkeyhash_address(&public_key_from_private_key(&key), Network::Mainnet);
+    (key, address)
+}
+
+fn fake_htlc_transaction(htlc_output: TxOutput) -> Transaction {
+    let source_id = encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let input = encode_input_for_utxo(source_id, 0);
+    encode_transaction(vec![input], vec![htlc_output], 0).unwrap()
+}
+
+/// SHA-256 of the empty string: the first 20 bytes are the `HtlcSecretHash`
+/// used by the HTLC tests, the full 32 bytes are the pre-image secret.
+const HTLC_EMPTY_STRING_SECRET: &str =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+fn htlc_test_output(spend_address: &str, refund_address: &str) -> TxOutput {
+    encode_output_htlc(
+        Amount::from_atoms(1000),
+        None,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4",
+        spend_address,
+        refund_address,
+        encode_lock_until_height(1_000_000),
+        Network::Mainnet,
+    )
+    .expect("HTLC output must encode")
 }
 
 #[test]
@@ -655,4 +693,288 @@ fn htlc_and_special_outputs_encode() {
     let pool = encode_output_create_stake_pool(&pool_id, pool_data, network)
         .expect("create-stake-pool output must encode");
     assert!(!pool.encode().is_empty());
+}
+
+#[test]
+fn htlc_spend_and_secret_extraction() {
+    let network = Network::Mainnet;
+    let (fixed_key, address) = fixed_signing_key();
+
+    let secret_bytes: [u8; 32] = hex::decode(HTLC_EMPTY_STRING_SECRET)
+        .unwrap()
+        .try_into()
+        .expect("secret must be 32 bytes");
+    let secret = HtlcSecret::new(secret_bytes);
+
+    let htlc_output = htlc_test_output(&address, &address);
+    let transaction = fake_htlc_transaction(htlc_output.clone());
+    let input_utxos = [Some(htlc_output)];
+
+    let witness = encode_witness_htlc_spend(
+        SigHashType::all(),
+        &fixed_key,
+        &address,
+        &transaction,
+        &input_utxos,
+        0,
+        secret,
+        &TxAdditionalInfo::new(),
+        500_000,
+        network,
+    )
+    .expect("HTLC spend witness must be produced");
+
+    let signed = encode_signed_transaction(transaction, vec![witness]).unwrap();
+
+    let source_id = encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let extracted = extract_htlc_secret(&signed, source_id, 0)
+        .expect("secret must be extractable from an HTLC spend");
+    assert_eq!(extracted, HtlcSecret::new(secret_bytes));
+    assert_eq!(
+        extracted.encode(),
+        secret_bytes.to_vec(),
+        "extracted secret must encode to the original 32 bytes"
+    );
+}
+
+#[test]
+fn htlc_refund_single_sig() {
+    let network = Network::Mainnet;
+    let (fixed_key, address) = fixed_signing_key();
+
+    let htlc_output = htlc_test_output(&address, &address);
+    let transaction = fake_htlc_transaction(htlc_output.clone());
+    let input_utxos = [Some(htlc_output)];
+
+    let witness = encode_witness_htlc_refund_single_sig(
+        SigHashType::all(),
+        &fixed_key,
+        &address,
+        &transaction,
+        &input_utxos,
+        0,
+        &TxAdditionalInfo::new(),
+        500_000,
+        network,
+    )
+    .expect("single-sig HTLC refund witness must be produced");
+    assert!(!witness.encode().is_empty());
+
+    let signed = encode_signed_transaction(transaction, vec![witness]).unwrap();
+
+    let source_id = encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let result = extract_htlc_secret(&signed, source_id, 0);
+    assert!(
+        matches!(result, Err(Error::UnexpectedHtlcSpendType)),
+        "a refund carries no secret, got {result:?}"
+    );
+}
+
+#[test]
+fn htlc_refund_multisig_cumulative() {
+    let network = Network::Mainnet;
+    let keys = [make_private_key(), make_private_key(), make_private_key()];
+    let public_keys: Vec<_> = keys.iter().map(public_key_from_private_key).collect();
+
+    let challenge = encode_multisig_challenge(&public_keys, 2, network)
+        .expect("multisig challenge must encode");
+    let msig_address = multisig_challenge_to_address(&challenge, network);
+
+    let htlc_output = htlc_test_output(&msig_address, &msig_address);
+    let transaction = fake_htlc_transaction(htlc_output.clone());
+    let input_utxos = [Some(htlc_output)];
+    let additional_info = TxAdditionalInfo::new();
+
+    let witness_0 = encode_witness_htlc_refund_multisig(
+        SigHashType::all(),
+        &keys[0],
+        0,
+        None,
+        &challenge,
+        &transaction,
+        &input_utxos,
+        0,
+        &additional_info,
+        500_000,
+        network,
+    )
+    .expect("first multisig refund signature must be produced");
+
+    let witness_1 = encode_witness_htlc_refund_multisig(
+        SigHashType::all(),
+        &keys[1],
+        1,
+        Some(&witness_0),
+        &challenge,
+        &transaction,
+        &input_utxos,
+        0,
+        &additional_info,
+        500_000,
+        network,
+    )
+    .expect("second multisig refund signature must be produced");
+    assert!(
+        witness_1.encode().len() > witness_0.encode().len(),
+        "the witness must grow as signatures accumulate"
+    );
+
+    let (standard_key, standard_address) = fixed_signing_key();
+    let standard_witness = encode_witness(
+        SigHashType::all(),
+        &standard_key,
+        &standard_address,
+        &transaction,
+        &input_utxos,
+        0,
+        &additional_info,
+        500_000,
+        network,
+    )
+    .expect("standard witness must be produced");
+    let result = encode_witness_htlc_refund_multisig(
+        SigHashType::all(),
+        &keys[2],
+        2,
+        Some(&standard_witness),
+        &challenge,
+        &transaction,
+        &input_utxos,
+        0,
+        &additional_info,
+        500_000,
+        network,
+    );
+    assert!(
+        result.is_err(),
+        "a standard UTXO witness must not seed an HTLC multisig refund, got {result:?}"
+    );
+
+    assert!(
+        matches!(
+            encode_multisig_challenge(&public_keys, 0, network),
+            Err(Error::ZeroMultisigRequiredSignatures)
+        ),
+        "zero required signatures must be rejected"
+    );
+}
+
+#[test]
+fn verify_transaction_intent_positive() {
+    let network = Network::Mainnet;
+    let key = make_private_key();
+    let address = pubkey_to_pubkeyhash_address(&public_key_from_private_key(&key), network);
+
+    let message = make_transaction_intent_message_to_sign("transfer", EXPECTED_TX_ID)
+        .expect("intent message must be produced");
+    let signature = sign_challenge(&key, message.as_bytes()).expect("intent must be signed");
+
+    let signed_intent = encode_signed_transaction_intent(&message, vec![signature])
+        .expect("signed intent must be assembled");
+
+    verify_transaction_intent(&message, &signed_intent.encode(), &[&address], network)
+        .expect("intent must verify against the signing address");
+
+    let tampered_message = make_transaction_intent_message_to_sign("transfer_all", EXPECTED_TX_ID)
+        .expect("tampered intent message must be produced");
+    assert!(
+        verify_transaction_intent(
+            &tampered_message,
+            &signed_intent.encode(),
+            &[&address],
+            network
+        )
+        .is_err(),
+        "a tampered message must not verify"
+    );
+
+    let other_key = make_private_key();
+    let other_address =
+        pubkey_to_pubkeyhash_address(&public_key_from_private_key(&other_key), network);
+    assert!(
+        verify_transaction_intent(
+            &message,
+            &signed_intent.encode(),
+            &[&other_address],
+            network
+        )
+        .is_err(),
+        "a wrong destination must not verify"
+    );
+}
+
+#[test]
+fn estimate_transaction_size_happy_path() {
+    let network = Network::Mainnet;
+    let (_, address, transaction, output) = fake_utxo_transaction(make_private_key());
+    let source_id = encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let input = encode_input_for_utxo(source_id, 0);
+
+    let estimate = estimate_transaction_size(
+        std::slice::from_ref(&input),
+        &[&address],
+        std::slice::from_ref(&output),
+        network,
+    )
+    .expect("size estimate must succeed");
+    assert!(estimate > 0, "estimate must be positive");
+    assert!(
+        estimate > transaction.encode().len(),
+        "estimate must cover the witness signatures, not just the unsigned transaction"
+    );
+
+    assert!(
+        estimate_transaction_size(&[input], &[&address, "mtc1qfoo"], &[output], network).is_err(),
+        "an unparsable destination must fail the estimate"
+    );
+}
+
+#[test]
+fn change_address_derivations() {
+    let account = make_default_account_privkey(MNEMONIC, Network::Mainnet, None)
+        .expect("account key must derive");
+
+    let receiving_priv = make_receiving_address(&account, 0).expect("receiving key must derive");
+    let change_priv = make_change_address(&account, 0).expect("change key must derive");
+
+    let account_public = extended_public_key_from_extended_private_key(&account);
+    assert!(
+        !account_public.encode().is_empty(),
+        "extended public key must encode"
+    );
+
+    let receiving_pub = make_receiving_address_public_key(&account_public, 0)
+        .expect("watch-only receiving key must derive");
+    let change_pub = make_change_address_public_key(&account_public, 0)
+        .expect("watch-only change key must derive");
+
+    assert_eq!(
+        hex::encode(public_key_from_private_key(&receiving_priv).encode()),
+        hex::encode(receiving_pub.encode()),
+        "watch-only receiving derivation must match the private derivation"
+    );
+    assert_eq!(
+        hex::encode(public_key_from_private_key(&change_priv).encode()),
+        hex::encode(change_pub.encode()),
+        "watch-only change derivation must match the private derivation"
+    );
+    assert_ne!(
+        receiving_priv.encode(),
+        change_priv.encode(),
+        "receiving and change branches must not collide at index 0"
+    );
+
+    let account_public_again = extended_public_key_from_extended_private_key(&account);
+    assert_eq!(
+        account_public.encode(),
+        account_public_again.encode(),
+        "extended public key derivation must be deterministic"
+    );
+    let receiving_pub_again = make_receiving_address_public_key(&account_public_again, 0)
+        .expect("watch-only receiving key must derive again");
+    assert_eq!(
+        receiving_pub.encode(),
+        receiving_pub_again.encode(),
+        "watch-only derivation must be deterministic"
+    );
 }

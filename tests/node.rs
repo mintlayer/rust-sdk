@@ -7,46 +7,19 @@
 //! Wire-format tests for the node daemon client, mirroring the go-sdk
 //! `node/client_test.go` suite.
 
+mod common;
+
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::{mock_rpc, respond, rpc_error, rpc_ok, rpc_ok_no_id};
 use httpmock::prelude::*;
-use httpmock::{Mock, Then};
 use serde_json::json;
 
 use mintlayer_sdk::node::{
     Amount, BannedPeer, BannedTime, Client, Error, FeeRate, FeeRatePoint, Outpoint,
     OutpointSourceId, TrustPolicy,
 };
-
-const RESPONSE_HEADERS: [(&str, &str); 1] = [("content-type", "application/json")];
-
-fn respond(then: Then, body: serde_json::Value) {
-    let mut builder = then.status(200);
-    for (name, value) in RESPONSE_HEADERS {
-        builder = builder.header(name, value);
-    }
-    builder.body(body.to_string());
-}
-
-fn rpc_ok(id: u64, result: serde_json::Value) -> serde_json::Value {
-    json!({ "jsonrpc": "2.0", "id": id, "result": result })
-}
-
-fn rpc_ok_no_id(result: serde_json::Value) -> serde_json::Value {
-    json!({ "jsonrpc": "2.0", "result": result })
-}
-
-fn mock_rpc(
-    server: &MockServer,
-    request_fragment: String,
-    response: serde_json::Value,
-) -> Mock<'_> {
-    server.mock(move |when, then| {
-        when.method(POST).path("/").body_contains(request_fragment);
-        respond(then, response);
-    })
-}
 
 #[tokio::test]
 async fn chainstate_info_roundtrip() {
@@ -59,6 +32,7 @@ async fn chainstate_info_roundtrip() {
             .body_contains("\"params\":{}");
         respond(
             then,
+            200,
             rpc_ok(
                 1,
                 json!({
@@ -158,11 +132,7 @@ async fn rpc_error_is_surfaced() {
     mock_rpc(
         &server,
         "\"jsonrpc\"".to_string(),
-        json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "error": { "code": -32601, "message": "Method not found" },
-        }),
+        rpc_error(1, -32601, "Method not found"),
     );
 
     let client = Client::new(server.url("/"));
@@ -183,7 +153,7 @@ async fn basic_auth_header_is_sent() {
     let server = MockServer::start();
     let mock = server.mock(|when, then| {
         when.method(POST).path("/").header("authorization", "Basic dXNlcjpwYXNz");
-        respond(then, rpc_ok(1, json!(5)));
+        respond(then, 200, rpc_ok(1, json!(5)));
     });
 
     let client = Client::builder(server.url("/")).basic_auth("user", "pass").build().unwrap();
@@ -210,7 +180,7 @@ async fn get_utxo_serializes_tagged_outpoint() {
             })
             .to_string(),
         );
-        respond(then, rpc_ok(1, json!({ "type": "Transfer" })));
+        respond(then, 200, rpc_ok(1, json!({ "type": "Transfer" })));
     });
 
     let client = Client::new(server.url("/"));
@@ -341,7 +311,7 @@ async fn submit_transaction_sends_trust_policy() {
             })
             .to_string(),
         );
-        respond(then, rpc_ok(1, json!(null)));
+        respond(then, 200, rpc_ok(1, json!(null)));
     });
 
     let client = Client::new(server.url("/"));
@@ -386,7 +356,7 @@ async fn oversized_responses_are_rejected() {
     let oversized = "0".repeat(65 * 1024 * 1024 + 10);
     server.mock(|when, then| {
         when.method(POST).path("/");
-        then.status(200).header("content-type", "application/json").body(oversized);
+        respond(then, 200, oversized);
     });
     let client = Client::new(server.url("/"));
     match client.best_block_height().await {

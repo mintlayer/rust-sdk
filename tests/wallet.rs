@@ -7,10 +7,12 @@
 //! Wire-format tests for the wallet daemon client, mirroring the go-sdk
 //! `wallet/client_test.go` and `wallet/orders_test.go` suites.
 
+mod common;
+
 use std::sync::Arc;
 
+use common::{mock_rpc, respond, rpc_error, rpc_ok};
 use httpmock::prelude::*;
-use httpmock::{Mock, Then};
 use serde_json::json;
 
 use mintlayer_sdk::wallet::{
@@ -19,33 +21,8 @@ use mintlayer_sdk::wallet::{
     RecoverWalletParams, SendParams, StakingStatus, TxOptions, UtxoSpendParams,
 };
 
-const RESPONSE_HEADERS: [(&str, &str); 1] = [("content-type", "application/json")];
-
 const MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-
-fn respond(then: Then, body: serde_json::Value) {
-    let mut builder = then.status(200);
-    for (name, value) in RESPONSE_HEADERS {
-        builder = builder.header(name, value);
-    }
-    builder.body(body.to_string());
-}
-
-fn rpc_ok(id: u64, result: serde_json::Value) -> serde_json::Value {
-    json!({ "jsonrpc": "2.0", "id": id, "result": result })
-}
-
-fn mock_rpc(
-    server: &MockServer,
-    request_fragment: String,
-    response: serde_json::Value,
-) -> Mock<'_> {
-    server.mock(move |when, then| {
-        when.method(POST).path("/").body_contains(request_fragment);
-        respond(then, response);
-    })
-}
 
 fn send_result() -> serde_json::Value {
     json!({
@@ -68,6 +45,7 @@ async fn create_wallet_returns_mnemonic() {
             .body_contains("\"store_seed_phrase\":true");
         respond(
             then,
+            200,
             rpc_ok(
                 1,
                 json!({
@@ -106,7 +84,7 @@ async fn open_wallet_password_null_handling() {
             .body_contains("\"method\":\"wallet_open\"")
             .body_contains("\"path\":\"/tmp/wallet.dat\"")
             .body_contains("\"password\":null");
-        respond(then, rpc_ok(1, json!(null)));
+        respond(then, 200, rpc_ok(1, json!(null)));
     });
 
     let client = Client::new(server.url("/"));
@@ -125,6 +103,7 @@ async fn balance_params_and_result() {
             .body_contains("\"with_locked\":null");
         respond(
             then,
+            200,
             rpc_ok(
                 1,
                 json!({
@@ -173,7 +152,7 @@ async fn send_params_wire_shape() {
                 && !body.contains("\"selected_utxos\":null")
                 && body.contains("\"options\":{\"in_top_x_mb\":null,\"broadcast_to_mempool\":null}")
         });
-        respond(then, rpc_ok(1, send_result()));
+        respond(then, 200, rpc_ok(1, send_result()));
     });
 
     let client = Client::new(server.url("/"));
@@ -204,7 +183,7 @@ async fn submit_transaction_hardcodes_trusted() {
             .body_contains("\"tx\":\"deadbeef\"")
             .body_contains("\"do_not_store\":true")
             .body_contains("\"options\":{\"trust_policy\":\"Trusted\"}");
-        respond(then, rpc_ok(1, json!({ "tx_id": "aabb" })));
+        respond(then, 200, rpc_ok(1, json!({ "tx_id": "aabb" })));
     });
 
     let client = Client::new(server.url("/"));
@@ -307,6 +286,7 @@ async fn create_order_wire_shapes() {
         });
         respond(
             then,
+            200,
             rpc_ok(
                 1,
                 json!({
@@ -345,6 +325,7 @@ async fn list_all_active_orders_null_filters() {
             .body_contains("\"give_currency\":null");
         respond(
             then,
+            200,
             rpc_ok(
                 1,
                 json!([
@@ -394,7 +375,7 @@ async fn lock_supply_uses_account_index() {
                 && body.contains("\"account_index\":3")
                 && !body.contains("\"account\":")
         });
-        respond(then, rpc_ok(1, send_result()));
+        respond(then, 200, rpc_ok(1, send_result()));
     });
 
     let client = Client::new(server.url("/"));
@@ -413,11 +394,7 @@ async fn rpc_error_is_surfaced() {
     mock_rpc(
         &server,
         "\"jsonrpc\"".to_string(),
-        json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "error": { "code": -32601, "message": "Method not found" },
-        }),
+        rpc_error(1, -32601, "Method not found"),
     );
 
     let client = Client::new(server.url("/"));

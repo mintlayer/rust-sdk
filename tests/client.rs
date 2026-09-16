@@ -6,25 +6,17 @@
 
 //! Tests for the top-level client and crate re-exports.
 
+mod common;
+
 use std::time::Duration;
 
-use httpmock::Then;
+use common::{respond, rpc_ok};
 use httpmock::prelude::*;
 use serde_json::json;
 
 use mintlayer_sdk::Client;
 use mintlayer_sdk::crypto::make_private_key;
 use mintlayer_sdk::prelude::*;
-
-fn respond(then: Then, body: serde_json::Value) {
-    then.status(200)
-        .header("content-type", "application/json")
-        .body(body.to_string());
-}
-
-fn rpc_ok(id: u64, result: serde_json::Value) -> serde_json::Value {
-    json!({ "jsonrpc": "2.0", "id": id, "result": result })
-}
 
 fn chainstate_info_result() -> serde_json::Value {
     json!({
@@ -77,11 +69,11 @@ async fn umbrella_client_end_to_end_request() {
     let server = MockServer::start();
     let node_mock = server.mock(|when, then| {
         when.method(POST).path("/node").body_contains("\"method\":\"chainstate_info\"");
-        respond(then, rpc_ok(1, chainstate_info_result()));
+        respond(then, 200, rpc_ok(1, chainstate_info_result()));
     });
     let wallet_mock = server.mock(|when, then| {
         when.method(POST).path("/wallet");
-        respond(then, rpc_ok(1, json!(null)));
+        respond(then, 200, rpc_ok(1, json!(null)));
     });
 
     let client = Client::builder()
@@ -114,7 +106,7 @@ async fn basic_auth_only_affects_rpc_clients() {
             .path("/node")
             .header("authorization", "Basic dXNlcjpwYXNz")
             .body_contains("\"method\":\"chainstate_info\"");
-        respond(then, rpc_ok(1, chainstate_info_result()));
+        respond(then, 200, rpc_ok(1, chainstate_info_result()));
     });
     let indexer_mock = server.mock(|when, then| {
         when.method(GET).path("/api/v2/chain/tip").matches(|request| {
@@ -125,7 +117,11 @@ async fn basic_auth_only_affects_rpc_clients() {
                 .iter()
                 .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
         });
-        respond(then, json!({ "block_height": 42000, "block_id": "0000ab" }));
+        respond(
+            then,
+            200,
+            json!({ "block_height": 42000, "block_id": "0000ab" }).to_string(),
+        );
     });
 
     let client = Client::builder()
