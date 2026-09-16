@@ -46,6 +46,12 @@ pub use client::{Client, ClientBuilder};
 
 /// Convenience re-exports so callers that only import the crate root do not
 /// need to reach into the sub-modules (mirrors the go-sdk alias block).
+///
+/// # Secret handling
+///
+/// The re-exported key types (`PrivateKey`, `ExtendedPrivateKey`, ...) come
+/// from mintlayer-core and do not redact their [`std::fmt::Debug`] output.
+/// Never log or debug-print keys; keep their lifetime short.
 #[cfg(feature = "crypto")]
 pub mod prelude {
     pub use crate::crypto::types::*;

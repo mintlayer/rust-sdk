@@ -41,13 +41,25 @@ impl Client {
 }
 
 /// Builder for [`Client`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ClientBuilder {
     node_url: Option<String>,
     indexer_url: Option<String>,
     wallet_url: Option<String>,
     basic_auth: Option<(String, String)>,
     timeout: Option<std::time::Duration>,
+}
+
+impl std::fmt::Debug for ClientBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientBuilder")
+            .field("node_url", &self.node_url)
+            .field("indexer_url", &self.indexer_url)
+            .field("wallet_url", &self.wallet_url)
+            .field("basic_auth", &self.basic_auth.as_ref().map(|_| "***"))
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl ClientBuilder {

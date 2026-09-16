@@ -60,6 +60,18 @@ fn builder_creates_only_configured_clients() {
     assert!(all.wallet.is_some());
 }
 
+#[test]
+fn debug_output_redacts_basic_auth() {
+    let builder = Client::builder()
+        .node_url("http://127.0.0.1:3030")
+        .wallet_url("http://127.0.0.1:3034")
+        .basic_auth("secretuser", "secretpass");
+    let debug = format!("{builder:?}");
+    assert!(!debug.contains("secretuser"));
+    assert!(!debug.contains("secretpass"));
+    assert!(debug.contains("***"));
+}
+
 #[tokio::test]
 async fn umbrella_client_end_to_end_request() {
     let server = MockServer::start();
