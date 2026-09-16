@@ -66,5 +66,13 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 # Required fix (paritytech/parity-scale-codec#751) not yet released; must match
 # the patch used by mintlayer-core so SCALE encodings stay compatible.
+#
+# NOTE FOR CONSUMERS: Cargo only honors [patch] sections from the *root*
+# workspace manifest. Because this crate depends on unpublished mintlayer-core
+# crates it must itself be consumed via git, which means this patch section is
+# IGNORED in downstream builds. Downstream consumers MUST copy this exact
+# [patch.crates-io] entry into their own workspace root Cargo.toml, or
+# transactions encoded by the `crypto` feature may not match the ones produced
+# by mintlayer-core.
 [patch.crates-io]
 parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec.git", rev = "5021525697edc0661591ebc71392c48d950a10b0" }
