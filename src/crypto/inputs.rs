@@ -139,8 +139,10 @@ pub fn encode_input_for_change_token_metadata_uri(
 ///
 /// Fill-order inputs must not be signed; use
 /// [`encode_witness_no_signature`](super::encode_witness_no_signature) for
-/// them. Before the orders V1 fork the nonce is significant; afterwards it is
-/// ignored.
+/// them. Before the orders V1 fork the nonce is significant; once the fork
+/// is active at `current_block_height`, both the `nonce` and the
+/// `destination` are ignored (in V1 the destination is derived from the
+/// order's transaction outputs).
 pub fn encode_input_for_fill_order(
     order_id: &str,
     fill_amount: Amount,

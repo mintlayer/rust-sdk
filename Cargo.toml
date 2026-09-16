@@ -53,7 +53,9 @@ bip39 = { version = "2.0", optional = true, default-features = false, features =
   "std",
   "zeroize",
 ] }
-zeroize = { version = "1.5", optional = true, default-features = false }
+zeroize = { version = "1.5", optional = true, default-features = false, features = [
+  "alloc",
+] }
 ml-common = { package = "common", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
 ml-consensus = { package = "consensus", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
 ml-crypto = { package = "crypto", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }

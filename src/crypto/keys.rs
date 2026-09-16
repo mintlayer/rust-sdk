@@ -5,6 +5,13 @@
 // that can be found in the LICENSE file.
 
 //! Key generation and BIP32-style derivation.
+//!
+//! # Secret material lifetime
+//!
+//! The BIP39 seed and passphrase are zeroized on drop, but the key objects
+//! returned by these functions are plain values without zeroization; this
+//! mirrors mintlayer-core itself. Avoid cloning or logging keys, and keep
+//! their lifetime short.
 
 use ml_common as common;
 use ml_crypto as crypto;
