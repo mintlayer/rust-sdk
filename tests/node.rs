@@ -110,17 +110,46 @@ async fn scalar_methods_and_id_counter() {
 #[tokio::test]
 async fn optional_results_decode_null_as_none() {
     let server = MockServer::start();
-    let mock = mock_rpc(
+    // Each response must carry the id of its request; the calls below run
+    // sequentially, so request ids 1, 2, 3 map 1:1 onto the three mocks.
+    let block_mock = mock_rpc(
         &server,
-        "\"jsonrpc\"".to_string(),
-        rpc_ok_no_id(json!(null)),
+        "\"id\":1,\"method\":\"chainstate_block_id_at_height\"".to_string(),
+        rpc_ok(1, json!(null)),
+    );
+    let pool_mock = mock_rpc(
+        &server,
+        "\"id\":2,\"method\":\"chainstate_stake_pool_balance\"".to_string(),
+        rpc_ok(2, json!(null)),
+    );
+    let token_mock = mock_rpc(
+        &server,
+        "\"id\":3,\"method\":\"chainstate_token_info\"".to_string(),
+        rpc_ok(3, json!(null)),
     );
 
     let client = Client::new(server.url("/"));
     assert_eq!(client.block_id_at_height(999_999).await.unwrap(), None);
     assert_eq!(client.stake_pool_balance("pool1abc").await.unwrap(), None);
     assert_eq!(client.token_info("token1abc").await.unwrap(), None);
-    assert_eq!(mock.hits(), 3);
+    assert_eq!(block_mock.hits(), 1);
+    assert_eq!(pool_mock.hits(), 1);
+    assert_eq!(token_mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn missing_response_id_is_rejected() {
+    let server = MockServer::start();
+    mock_rpc(&server, "\"jsonrpc\"".to_string(), rpc_ok_no_id(json!(42)));
+
+    let client = Client::new(server.url("/"));
+    match client.best_block_height().await {
+        Err(Error::IdMismatch { expected, actual }) => {
+            assert_eq!(expected, 1);
+            assert_eq!(actual, serde_json::Value::Null);
+        }
+        other => panic!("expected IdMismatch, got: {other:?}"),
+    }
 }
 
 #[tokio::test]

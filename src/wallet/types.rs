@@ -171,10 +171,16 @@ pub struct WalletTx {
 }
 
 /// A mnemonic as returned by the wallet daemon.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MnemonicContent {
     /// The seed phrase words.
     pub mnemonic: String,
+}
+
+impl std::fmt::Debug for MnemonicContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MnemonicContent").field("mnemonic", &"<redacted>").finish()
+    }
 }
 
 /// The mnemonic section of a [`CreateWalletResult`].
@@ -195,7 +201,7 @@ pub struct CreateWalletResult {
 }
 
 /// Parameters for [`Client::create_wallet`](crate::wallet::Client::create_wallet).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize)]
 pub struct CreateWalletParams {
     /// File path for the wallet database.
     pub path: String,
@@ -209,8 +215,20 @@ pub struct CreateWalletParams {
     pub hardware_wallet: Option<String>,
 }
 
+impl std::fmt::Debug for CreateWalletParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateWalletParams")
+            .field("path", &self.path)
+            .field("store_seed_phrase", &self.store_seed_phrase)
+            .field("mnemonic", &self.mnemonic.as_ref().map(|_| "***"))
+            .field("passphrase", &self.passphrase.as_ref().map(|_| "***"))
+            .field("hardware_wallet", &self.hardware_wallet)
+            .finish()
+    }
+}
+
 /// Parameters for [`Client::recover_wallet`](crate::wallet::Client::recover_wallet).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct RecoverWalletParams {
     /// File path for the wallet database.
     pub path: String,
@@ -222,6 +240,18 @@ pub struct RecoverWalletParams {
     pub passphrase: Option<String>,
     /// Optional hardware wallet type.
     pub hardware_wallet: Option<String>,
+}
+
+impl std::fmt::Debug for RecoverWalletParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecoverWalletParams")
+            .field("path", &self.path)
+            .field("store_seed_phrase", &self.store_seed_phrase)
+            .field("mnemonic", &"***")
+            .field("passphrase", &self.passphrase.as_ref().map(|_| "***"))
+            .field("hardware_wallet", &self.hardware_wallet)
+            .finish()
+    }
 }
 
 /// Extra wallet information.

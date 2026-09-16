@@ -15,7 +15,7 @@ use serde_json::json;
 
 use mintlayer_sdk::wallet::{
     Amount, Client, CreateOrderParams, CreateWalletParams, CurrencyFilter, Error, ListOrdersParams,
-    LockSupplyParams, OutputValue, SendParams, StakingStatus, TxOptions,
+    LockSupplyParams, OutputValue, RecoverWalletParams, SendParams, StakingStatus, TxOptions,
 };
 
 const RESPONSE_HEADERS: [(&str, &str); 1] = [("content-type", "application/json")];
@@ -495,4 +495,53 @@ async fn concurrent_calls_use_unique_ids() {
     for mock in &mocks {
         assert_eq!(mock.hits(), 1);
     }
+}
+
+#[tokio::test]
+async fn debug_output_redacts_mnemonics_and_passphrases() {
+    let create_params = CreateWalletParams {
+        mnemonic: Some("secret words here".to_string()),
+        passphrase: Some("secret-pass".to_string()),
+        path: "/tmp/w.dat".to_string(),
+        store_seed_phrase: true,
+        hardware_wallet: None,
+    };
+    let create_debug = format!("{create_params:?}");
+    assert!(!create_debug.contains("secret words here"));
+    assert!(!create_debug.contains("secret-pass"));
+    assert!(create_debug.contains("***"));
+
+    let recover_params = RecoverWalletParams {
+        mnemonic: "secret words here".to_string(),
+        passphrase: Some("secret-pass".to_string()),
+        path: "/tmp/w.dat".to_string(),
+        store_seed_phrase: true,
+        hardware_wallet: None,
+    };
+    let recover_debug = format!("{recover_params:?}");
+    assert!(!recover_debug.contains("secret words here"));
+    assert!(!recover_debug.contains("secret-pass"));
+    assert!(recover_debug.contains("***"));
+
+    // The mnemonic returned by the daemon is redacted in result debug output.
+    let server = MockServer::start();
+    mock_rpc(
+        &server,
+        "\"method\":\"wallet_create\"".to_string(),
+        rpc_ok(
+            1,
+            json!({
+                "mnemonic": {
+                    "type": "NewlyGenerated",
+                    "content": { "mnemonic": "top secret seed phrase" },
+                },
+            }),
+        ),
+    );
+
+    let client = Client::new(server.url("/"));
+    let result = client.create_wallet(create_params).await.unwrap();
+    let result_debug = format!("{result:?}");
+    assert!(!result_debug.contains("top secret seed phrase"));
+    assert!(result_debug.contains("<redacted>"));
 }

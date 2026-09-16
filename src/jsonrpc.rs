@@ -186,13 +186,19 @@ impl Transport {
             });
         }
         match response.id {
-            Some(actual) if actual.as_u64() != Some(id) => {
+            Some(actual) if actual.as_u64() == Some(id) => {}
+            Some(actual) => {
                 return Err(RequestError::IdMismatch {
                     expected: id,
                     actual,
                 });
             }
-            _ => {}
+            None => {
+                return Err(RequestError::IdMismatch {
+                    expected: id,
+                    actual: serde_json::Value::Null,
+                });
+            }
         }
         Ok(serde_json::from_value(response.result)?)
     }
