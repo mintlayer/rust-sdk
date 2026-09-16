@@ -43,3 +43,14 @@ mod client;
 
 #[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]
 pub use client::{Client, ClientBuilder};
+
+/// Convenience re-exports so callers that only import the crate root do not
+/// need to reach into the sub-modules (mirrors the go-sdk alias block).
+#[cfg(feature = "crypto")]
+pub mod prelude {
+    pub use crate::crypto::types::*;
+    pub use crate::crypto::{
+        Amount, FreezableToken, IsTokenFreezable, IsTokenUnfreezable, Network, SigHashType,
+        SourceId, TokenTotalSupply, TxAdditionalInfo,
+    };
+}
