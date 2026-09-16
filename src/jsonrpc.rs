@@ -159,16 +159,7 @@ impl Transport {
         }
     }
 
-    pub(crate) async fn call<P, R, E>(&self, method: &str, params: &P) -> Result<R, E>
-    where
-        P: Serialize + ?Sized,
-        R: DeserializeOwned,
-        E: From<RequestError>,
-    {
-        self.call_inner(method, params).await.map_err(E::from)
-    }
-
-    async fn call_inner<P, R>(&self, method: &str, params: &P) -> Result<R, RequestError>
+    pub(crate) async fn call<P, R>(&self, method: &str, params: &P) -> Result<R, RequestError>
     where
         P: Serialize + ?Sized,
         R: DeserializeOwned,

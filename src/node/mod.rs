@@ -62,14 +62,22 @@ impl Client {
         }
     }
 
+    pub(crate) async fn call<P, R>(&self, method: &str, params: &P) -> Result<R, Error>
+    where
+        P: serde::Serialize + ?Sized,
+        R: serde::de::DeserializeOwned,
+    {
+        self.transport.call(method, params).await.map_err(Error::from)
+    }
+
     /// Returns the node software version, e.g. `"1.3.0"`.
     pub async fn node_version(&self) -> Result<String, Error> {
-        self.transport.call("node_version", &serde_json::json!({})).await
+        self.call("node_version", &serde_json::json!({})).await
     }
 
     /// Requests a graceful shutdown of the node daemon.
     pub async fn node_shutdown(&self) -> Result<(), Error> {
-        self.transport.call("node_shutdown", &serde_json::json!({})).await
+        self.call("node_shutdown", &serde_json::json!({})).await
     }
 }
 

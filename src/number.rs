@@ -144,6 +144,58 @@ pub(crate) mod f64_percent {
     }
 }
 
+/// `(de)serializes` an `Option<u128>` atom amount from a decimal string or
+/// integer; `null` and missing fields become `None`.
+pub(crate) mod option_atoms_lenient {
+    use std::fmt;
+
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    #[allow(dead_code)]
+    pub(crate) fn serialize<S: Serializer>(
+        value: &Option<u128>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(value) => serializer.serialize_str(&value.to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<u128>, D::Error> {
+        struct AtomsVisitor;
+
+        impl Visitor<'_> for AtomsVisitor {
+            type Value = Option<u128>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("null, a decimal atom string, or an integer")
+            }
+
+            fn visit_unit<E: de::Error>(self) -> Result<Option<u128>, E> {
+                Ok(None)
+            }
+
+            fn visit_none<E: de::Error>(self) -> Result<Option<u128>, E> {
+                Ok(None)
+            }
+
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<Option<u128>, E> {
+                Ok(Some(u128::from(value)))
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Option<u128>, E> {
+                value.parse::<u128>().map(Some).map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(AtomsVisitor)
+    }
+}
+
 /// Deserializes an `Option<u64>` that may arrive as `null`, an integer, or a
 /// decimal string; serializes integers and `null`.
 pub(crate) mod option_u64_lenient {
