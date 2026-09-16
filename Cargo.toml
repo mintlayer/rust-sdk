@@ -22,6 +22,8 @@ indexer = ["http"]
 wallet = ["http"]
 # Native cryptography and transaction building backed by mintlayer-core.
 crypto = [
+  "dep:serde",
+  "dep:serde_json",
   "dep:ml-common",
   "dep:ml-consensus",
   "dep:ml-crypto",

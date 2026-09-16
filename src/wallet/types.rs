@@ -400,7 +400,7 @@ pub struct SweepParams {
 }
 
 /// Parameters for [`Client::spend_utxo`](crate::wallet::Client::spend_utxo).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct UtxoSpendParams {
     /// The account to spend from.
     pub account: u32,
@@ -414,8 +414,20 @@ pub struct UtxoSpendParams {
     pub options: TxOptions,
 }
 
+impl std::fmt::Debug for UtxoSpendParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UtxoSpendParams")
+            .field("account", &self.account)
+            .field("utxo", &self.utxo)
+            .field("output_address", &self.output_address)
+            .field("htlc_secret", &self.htlc_secret.as_ref().map(|_| "***"))
+            .field("options", &self.options)
+            .finish()
+    }
+}
+
 /// Parameters for [`Client::compose_transaction`](crate::wallet::Client::compose_transaction).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct ComposeParams {
     /// The inputs to spend.
     pub inputs: Vec<Outpoint>,
@@ -425,6 +437,17 @@ pub struct ComposeParams {
     pub htlc_secrets: Option<serde_json::Value>,
     /// Whether to return only the transaction instead of a partial one.
     pub only_transaction: bool,
+}
+
+impl std::fmt::Debug for ComposeParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ComposeParams")
+            .field("inputs", &self.inputs)
+            .field("outputs", &self.outputs)
+            .field("htlc_secrets", &self.htlc_secrets.as_ref().map(|_| "***"))
+            .field("only_transaction", &self.only_transaction)
+            .finish()
+    }
 }
 
 /// A source or destination currency for orders.

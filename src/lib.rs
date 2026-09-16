@@ -15,7 +15,23 @@
 //! | [`node`]   | JSON-RPC 2.0 client for the node daemon              | 3030 mainnet  |
 //! | [`indexer`]| REST client for the indexer (api-web-server)         | 3000          |
 //! | [`wallet`] | JSON-RPC 2.0 client for the wallet daemon            | 3034 mainnet  |
-//! | [`crypto`] | Cryptography & transaction building (native)         | —             |
+//! | `crypto`   | Cryptography & transaction building (native)         | —             |
+//!
+//! # Amount types
+//!
+//! The daemon wire format differs per client, so each module has its own
+//! `Amount` type:
+//!
+//! - `crypto::Amount` — a `u128` atom value
+//!   (re-exported from mintlayer-core) used when building transactions.
+//! - `node::Amount` — atoms as `u128`, decoded from the daemon's
+//!   `{"atoms": "..."}` object.
+//! - `indexer::Amount` — `atoms` plus the daemon's `decimal` string.
+//! - `wallet::Amount` — optional `atoms`/`decimal` (requests typically set
+//!   `atoms` only, via [`Amount::from_atoms`](crate::wallet::Amount)).
+//!
+//! All four are denominated in atoms (1 ML = 10^11 atoms); converting
+//! between them is done through the atom value.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -32,7 +48,10 @@ pub mod wallet;
 #[cfg(any(feature = "node", feature = "wallet"))]
 mod jsonrpc;
 
+// The lenient wire-format helpers serve different feature combinations, so
+// some are unused under any single-feature build.
 #[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]
+#[allow(dead_code)]
 mod number;
 
 #[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]

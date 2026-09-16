@@ -53,6 +53,9 @@ pub enum Error {
     /// An input witness could not be produced.
     #[error("failed to sign input: {0}")]
     InputSigning(String),
+    /// Key generation or derivation failed.
+    #[error("failed to derive key: {0}")]
+    KeyDerivation(String),
     /// The sighash could not be calculated.
     #[error("failed to calculate sighash: {0}")]
     Sighash(String),

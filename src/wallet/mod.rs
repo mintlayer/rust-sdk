@@ -15,8 +15,6 @@ mod tokens;
 mod transaction;
 mod types;
 
-use std::sync::OnceLock;
-
 pub use error::Error;
 pub use types::{
     AccountInfo, ActiveOrder, AddressWithUsage, Amount, Balance, BestBlock, ChangeAuthorityParams,
@@ -32,20 +30,6 @@ pub use types::{
 };
 
 use crate::jsonrpc;
-use crate::limits::DEFAULT_TIMEOUT;
-
-static DEFAULT_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-fn default_http_client() -> reqwest::Client {
-    DEFAULT_HTTP_CLIENT
-        .get_or_init(|| {
-            reqwest::Client::builder()
-                .timeout(DEFAULT_TIMEOUT)
-                .build()
-                .expect("reqwest client with default settings must build")
-        })
-        .clone()
-}
 
 /// Client for the Mintlayer wallet daemon JSON-RPC API.
 #[derive(Debug, Clone)]
@@ -59,7 +43,11 @@ impl Client {
     #[must_use]
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self {
-            transport: jsonrpc::Transport::from_parts(endpoint.into(), default_http_client(), None),
+            transport: jsonrpc::Transport::from_parts(
+                endpoint.into(),
+                crate::limits::default_http_client(),
+                None,
+            ),
         }
     }
 

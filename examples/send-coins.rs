@@ -23,10 +23,11 @@
 //! The example sweeps every spendable Transfer/Coin UTXO of the derived
 //! address and emits a single output of `--amount` with no change output.
 //! In Mintlayer the fee is implicitly `sum(inputs) - sum(outputs)` and goes
-//! to the block producer, so the example requires `--amount` to equal the
-//! full swept total; anything less would silently overpay the miner and a
-//! zero-fee transaction is rejected by the mempool. Production code should
-//! add a change output sized from
+//! to the block producer, so `--amount` must be strictly less than the
+//! swept total: the difference becomes the transaction fee (a zero-fee
+//! transaction is rejected by the mempool). The example prints the implicit
+//! fee before submitting. Production code should instead add a change
+//! output sized from
 //! [`estimate_transaction_size`](mintlayer_sdk::crypto::estimate_transaction_size)
 //! and a fee rate fetched with the `feerate` endpoints.
 //!
@@ -165,17 +166,16 @@ async fn run() -> Result<(), String> {
     }
 
     let amount = u128::from_str(&args.amount).map_err(|_| "invalid --amount")?;
-    if amount != total {
+    if amount >= total {
         return Err(format!(
-            "this example sweeps the full balance with no change output: \
-             the difference between --amount ({amount}) and the swept total \
-             ({total}) would be paid to the block producer as fee. \
-             Pass --amount {total}, or add a change output in your own code."
+            "this example sweeps the full balance with no change output, \
+             so --amount must be strictly less than the swept total \
+             ({total}): the difference becomes the transaction fee and a \
+             zero-fee transaction is rejected by the mempool"
         ));
     }
-    if total <= amount {
-        return Err("the swept total leaves nothing for the transaction fee".to_owned());
-    }
+    let fee = total - amount;
+    println!("implicit fee (paid to the block producer): {fee} atoms");
 
     let outputs = vec![
         crypto::encode_output_transfer(Amount::from_atoms(amount), &args.to, network)

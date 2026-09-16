@@ -42,7 +42,7 @@ pub fn encode_multisig_challenge(
     let min_sigs =
         NonZeroU8::new(min_required_signatures).ok_or(Error::ZeroMultisigRequiredSignatures)?;
     ClassicMultisigChallenge::new(super::chain_config(network), min_sigs, public_keys.to_vec())
-        .map_err(|error| Error::MessageSigning(error.to_string()))
+        .map_err(|error| Error::KeyDerivation(error.to_string()))
 }
 
 /// Returns the bech32 address of a multisig challenge.

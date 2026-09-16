@@ -6,22 +6,28 @@
 
 //! Top-level SDK client wiring the sub-clients together.
 
+#[cfg(feature = "indexer")]
 use crate::indexer;
+#[cfg(feature = "node")]
 use crate::node;
+#[cfg(feature = "wallet")]
 use crate::wallet;
 
 /// The top-level Mintlayer SDK client.
 ///
 /// Each sub-client is `Some` only when its URL was set on the
-/// [`ClientBuilder`]. The [`crypto`](crate::crypto) functions are always
-/// available directly and require no client.
-#[derive(Debug, Clone)]
+/// [`ClientBuilder`]. The `crypto` module functions are always available
+/// directly (when the `crypto` feature is enabled) and require no client.
+#[derive(Debug, Clone, Default)]
 pub struct Client {
     /// JSON-RPC client for the node daemon.
+    #[cfg(feature = "node")]
     pub node: Option<node::Client>,
     /// REST client for the indexer.
+    #[cfg(feature = "indexer")]
     pub indexer: Option<indexer::Client>,
     /// JSON-RPC client for the wallet daemon.
+    #[cfg(feature = "wallet")]
     pub wallet: Option<wallet::Client>,
 }
 
@@ -64,6 +70,7 @@ impl std::fmt::Debug for ClientBuilder {
 
 impl ClientBuilder {
     /// Creates a node daemon client for the given base URL.
+    #[cfg(feature = "node")]
     #[must_use]
     pub fn node_url(mut self, url: impl Into<String>) -> Self {
         self.node_url = Some(url.into());
@@ -71,6 +78,7 @@ impl ClientBuilder {
     }
 
     /// Creates an indexer client for the given base URL.
+    #[cfg(feature = "indexer")]
     #[must_use]
     pub fn indexer_url(mut self, url: impl Into<String>) -> Self {
         self.indexer_url = Some(url.into());
@@ -78,6 +86,7 @@ impl ClientBuilder {
     }
 
     /// Creates a wallet daemon client for the given base URL.
+    #[cfg(feature = "wallet")]
     #[must_use]
     pub fn wallet_url(mut self, url: impl Into<String>) -> Self {
         self.wallet_url = Some(url.into());
@@ -103,43 +112,90 @@ impl ClientBuilder {
 
     /// Builds the client.
     pub fn build(self) -> Result<Client, reqwest::Error> {
-        let node = self.node_url.map(|url| {
-            let builder = node::Client::builder(url);
-            let builder = match &self.basic_auth {
-                Some((username, password)) => builder.basic_auth(username, password),
-                None => builder,
-            };
-            match self.timeout {
-                Some(timeout) => builder.timeout(timeout),
-                None => builder,
-            }
-            .build()
-        });
-        let wallet = self.wallet_url.map(|url| {
-            let builder = wallet::Client::builder(url);
-            let builder = match &self.basic_auth {
-                Some((username, password)) => builder.basic_auth(username, password),
-                None => builder,
-            };
-            match self.timeout {
-                Some(timeout) => builder.timeout(timeout),
-                None => builder,
-            }
-            .build()
-        });
-        let indexer = self.indexer_url.map(|url| {
-            let builder = indexer::Client::builder(url);
-            match self.timeout {
-                Some(timeout) => builder.timeout(timeout),
-                None => builder,
-            }
-            .build()
-        });
+        #[cfg(any(feature = "node", feature = "wallet"))]
+        let basic_auth = self.basic_auth;
+        #[cfg(not(any(feature = "node", feature = "wallet")))]
+        let _ = self.basic_auth;
+        let timeout = self.timeout;
+        #[cfg(feature = "node")]
+        let node_url = self.node_url;
+        #[cfg(feature = "indexer")]
+        let indexer_url = self.indexer_url;
+        #[cfg(feature = "wallet")]
+        let wallet_url = self.wallet_url;
+        #[cfg(not(any(feature = "node", feature = "indexer", feature = "wallet")))]
+        let _ = self;
+
+        #[cfg(any(feature = "node", feature = "wallet"))]
+        let rpc_options = RpcOptions {
+            basic_auth: &basic_auth,
+            timeout,
+        };
+        #[cfg(feature = "indexer")]
+        let rest_options = RestOptions { timeout };
 
         Ok(Client {
-            node: node.transpose()?,
-            indexer: indexer.transpose()?,
-            wallet: wallet.transpose()?,
+            #[cfg(feature = "node")]
+            node: node_url
+                .map(|url| node::Client::builder(url).rpc_options(&rpc_options).build())
+                .transpose()?,
+            #[cfg(feature = "indexer")]
+            indexer: indexer_url
+                .map(|url| indexer::Client::builder(url).rest_options(&rest_options).build())
+                .transpose()?,
+            #[cfg(feature = "wallet")]
+            wallet: wallet_url
+                .map(|url| wallet::Client::builder(url).rpc_options(&rpc_options).build())
+                .transpose()?,
         })
+    }
+}
+
+#[cfg(any(feature = "node", feature = "wallet"))]
+struct RpcOptions<'a> {
+    basic_auth: &'a Option<(String, String)>,
+    timeout: Option<std::time::Duration>,
+}
+
+#[cfg(feature = "indexer")]
+struct RestOptions {
+    timeout: Option<std::time::Duration>,
+}
+
+#[cfg(feature = "node")]
+impl node::ClientBuilder {
+    fn rpc_options(self, options: &RpcOptions<'_>) -> Self {
+        let builder = match options.basic_auth {
+            Some((username, password)) => self.basic_auth(username, password),
+            None => self,
+        };
+        match options.timeout {
+            Some(timeout) => builder.timeout(timeout),
+            None => builder,
+        }
+    }
+}
+
+#[cfg(feature = "wallet")]
+impl wallet::ClientBuilder {
+    fn rpc_options(self, options: &RpcOptions<'_>) -> Self {
+        let builder = match options.basic_auth {
+            Some((username, password)) => self.basic_auth(username, password),
+            None => self,
+        };
+        match options.timeout {
+            Some(timeout) => builder.timeout(timeout),
+            None => builder,
+        }
+    }
+}
+
+#[cfg(feature = "indexer")]
+impl indexer::ClientBuilder {
+    fn rest_options(self, options: &RestOptions) -> Self {
+        match options.timeout {
+            Some(timeout) => self.timeout(timeout),
+            None => self,
+        }
     }
 }

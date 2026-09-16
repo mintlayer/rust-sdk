@@ -31,7 +31,10 @@ pub use types::{
     Transaction, Uint64, Utxo, UtxoOutpoint,
 };
 
-use crate::limits::{DEFAULT_TIMEOUT, MAX_ERROR_BODY_CHARS, MAX_RESPONSE_BYTES};
+use crate::limits::{DEFAULT_TIMEOUT, MAX_RESPONSE_BYTES};
+
+/// Upper bound for the characters kept from a daemon error body.
+const MAX_ERROR_BODY_CHARS: usize = 8 * 1024;
 
 /// Client for the Mintlayer indexer REST API (api-web-server).
 #[derive(Debug, Clone)]
@@ -191,7 +194,7 @@ impl ClientBuilder {
     pub fn build(self) -> Result<Client, reqwest::Error> {
         let http = match self.http_client {
             Some(http) => http,
-            None => reqwest::Client::builder().timeout(self.timeout).build()?,
+            None => crate::limits::default_http_client_with_timeout(self.timeout)?,
         };
         Ok(Client {
             api_base: self.api_base,

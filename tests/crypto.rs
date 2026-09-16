@@ -8,20 +8,30 @@
 //! `wasm/client_test.go` suite and the wasm-wrappers test vectors.
 
 use mintlayer_sdk::crypto::types::{
-    DecodeAll, Encode, H256, InputWitness, PrivateKey, Transaction, TxOutput,
+    DecodeAll, Encode, H256, InputWitness, PrivateKey, Transaction, TxInput, TxOutput,
 };
 use mintlayer_sdk::crypto::{
-    Amount, Network, SigHashType, SourceId, TxAdditionalInfo, data_deposit_fee,
+    Amount, Error, IsTokenUnfreezable, Network, SigHashType, SourceId, TxAdditionalInfo,
+    data_deposit_fee, decode_partially_signed_transaction_to_json,
     decode_signed_transaction_to_json, decode_transaction, decode_transaction_lenient,
-    effective_pool_balance, encode_input_for_utxo, encode_lock_for_block_count,
+    effective_pool_balance, encode_destination, encode_input_for_change_token_authority,
+    encode_input_for_change_token_metadata_uri, encode_input_for_conclude_order,
+    encode_input_for_fill_order, encode_input_for_freeze_order, encode_input_for_freeze_token,
+    encode_input_for_lock_token_supply, encode_input_for_mint_tokens,
+    encode_input_for_unfreeze_token, encode_input_for_unmint_tokens, encode_input_for_utxo,
+    encode_input_for_withdraw_from_delegation, encode_lock_for_block_count,
     encode_lock_for_seconds, encode_lock_until_height, encode_lock_until_time,
-    encode_outpoint_source_id, encode_output_transfer, encode_signed_transaction,
+    encode_outpoint_source_id, encode_output_create_stake_pool, encode_output_htlc,
+    encode_output_issue_nft, encode_output_transfer, encode_partially_signed_transaction,
+    encode_signed_transaction, encode_signed_transaction_intent, encode_stake_pool_data,
     encode_transaction, encode_witness, encode_witness_no_signature, estimate_transaction_size,
-    fungible_token_issuance_fee, get_pool_id, get_token_id, make_default_account_privkey,
-    make_private_key, make_receiving_address, nft_issuance_fee, pubkey_to_pubkeyhash_address,
+    fungible_token_issuance_fee, get_delegation_id, get_order_id, get_pool_id, get_token_id,
+    make_default_account_privkey, make_private_key, make_receiving_address,
+    make_transaction_intent_message_to_sign, nft_issuance_fee, pubkey_to_pubkeyhash_address,
     public_key_from_private_key, sign_challenge, sign_message_for_spending,
     staking_pool_spend_maturity_block_count, token_change_authority_fee, token_freeze_fee,
     token_supply_change_fee, transaction_id, verify_challenge, verify_signature_for_spending,
+    verify_transaction_intent,
 };
 
 const MNEMONIC: &str = "walk exile faculty near leg neutral license matrix maple invite cupboard hat opinion excess coffee leopard latin regret document core limb crew dizzy movie";
@@ -399,4 +409,246 @@ fn get_token_id_from_inputs() {
         token_id, "mmltk1ht59xvv2sdxz28txuwryy55yl5qq9tf9657kvnqulfy9a2g3csssee4n2n",
         "token id derived from an all-zero-hash outpoint at height 500_000"
     );
+}
+
+/// A mainnet VRF public key, taken from mintlayer-core's own address test
+/// vectors (`common/src/address/hexified.rs`), so that stake-pool creation can
+/// be exercised without deriving a VRF key (the SDK exposes no helper for it).
+const MAINNET_VRF_PUBLIC_KEY: &str =
+    "mvrfpk1qqyxcl4tc6y9amf2vmv6sgu8x5jwqlxawx73vhgemkduag9c8ku57m03mze";
+
+#[test]
+fn input_constructors_encode() {
+    let network = Network::Mainnet;
+
+    // A delegation id derived from a UTXO outpoint over hash [7u8; 32].
+    let delegation_source =
+        encode_outpoint_source_id(H256::from_slice(&[7u8; 32]), SourceId::Transaction);
+    let delegation_id =
+        get_delegation_id(&[encode_input_for_utxo(delegation_source, 0)], network).unwrap();
+
+    // The token id pinned by `get_token_id_from_inputs`.
+    let token_source =
+        encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let token_id =
+        get_token_id(&[encode_input_for_utxo(token_source, 0)], 500_000, network).unwrap();
+
+    let fresh_authority =
+        pubkey_to_pubkeyhash_address(&public_key_from_private_key(&make_private_key()), network);
+
+    let cases: Vec<(&str, Box<dyn Fn() -> Result<TxInput, Error>>)> = vec![
+        (
+            "withdraw_from_delegation",
+            Box::new(|| {
+                encode_input_for_withdraw_from_delegation(
+                    &delegation_id,
+                    Amount::from_atoms(1),
+                    0,
+                    network,
+                )
+            }),
+        ),
+        (
+            "mint_tokens",
+            Box::new(|| encode_input_for_mint_tokens(&token_id, Amount::from_atoms(1), 0, network)),
+        ),
+        (
+            "unmint_tokens",
+            Box::new(|| encode_input_for_unmint_tokens(&token_id, 0, network)),
+        ),
+        (
+            "lock_token_supply",
+            Box::new(|| encode_input_for_lock_token_supply(&token_id, 0, network)),
+        ),
+        (
+            "freeze_token",
+            Box::new(|| {
+                encode_input_for_freeze_token(&token_id, IsTokenUnfreezable::Yes, 0, network)
+            }),
+        ),
+        (
+            "unfreeze_token",
+            Box::new(|| encode_input_for_unfreeze_token(&token_id, 0, network)),
+        ),
+        (
+            "change_token_authority",
+            Box::new(|| {
+                encode_input_for_change_token_authority(&token_id, &fresh_authority, 0, network)
+            }),
+        ),
+        (
+            "change_token_metadata_uri",
+            Box::new(|| {
+                encode_input_for_change_token_metadata_uri(
+                    &token_id,
+                    "https://example.com/metadata",
+                    0,
+                    network,
+                )
+            }),
+        ),
+    ];
+
+    for (name, build) in cases {
+        let input = build().unwrap_or_else(|error| panic!("{name} must encode: {error}"));
+        assert!(
+            !input.encode().is_empty(),
+            "{name} produced an empty encoding"
+        );
+    }
+}
+
+#[test]
+fn fill_order_fork_versions() {
+    let network = Network::Mainnet;
+    let source = encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let order_id = get_order_id(&[encode_input_for_utxo(source, 0)], network).unwrap();
+    let destination =
+        pubkey_to_pubkeyhash_address(&public_key_from_private_key(&make_private_key()), network);
+
+    // Mainnet orders V1 activates at height 517_700; straddle it. Pre-fork
+    // inputs are V0 AccountCommand, post-fork they are V1 OrderAccountCommand.
+    let pre_fork = encode_input_for_fill_order(
+        &order_id,
+        Amount::from_atoms(1),
+        &destination,
+        0,
+        500_000,
+        network,
+    )
+    .expect("fill order must encode before the orders V1 fork");
+    let post_fork = encode_input_for_fill_order(
+        &order_id,
+        Amount::from_atoms(1),
+        &destination,
+        0,
+        5_000_000,
+        network,
+    )
+    .expect("fill order must encode after the orders V1 fork");
+    assert_ne!(
+        pre_fork.encode(),
+        post_fork.encode(),
+        "fill-order encoding must change across the orders V1 fork"
+    );
+
+    let conclude_pre = encode_input_for_conclude_order(&order_id, 0, 500_000, network)
+        .expect("conclude order must encode before the orders V1 fork");
+    let conclude_post = encode_input_for_conclude_order(&order_id, 0, 5_000_000, network)
+        .expect("conclude order must encode after the orders V1 fork");
+    assert_ne!(
+        conclude_pre.encode(),
+        conclude_post.encode(),
+        "conclude-order encoding must change across the orders V1 fork"
+    );
+
+    // Freezing an order only exists once orders V1 is active.
+    match encode_input_for_freeze_order(&order_id, 500_000, network) {
+        Err(Error::OrdersV1NotActivated) => {}
+        other => panic!("expected OrdersV1NotActivated before the fork, got {other:?}"),
+    }
+    let freeze_post = encode_input_for_freeze_order(&order_id, 5_000_000, network)
+        .expect("freeze order must encode after the orders V1 fork");
+    assert!(!freeze_post.encode().is_empty());
+}
+
+#[test]
+fn intents_roundtrip() {
+    let message = make_transaction_intent_message_to_sign("transfer", EXPECTED_TX_ID)
+        .expect("intent message must be produced");
+    assert!(!message.is_empty());
+
+    let signed = encode_signed_transaction_intent(&message, vec![vec![1u8; 64]])
+        .expect("signed intent must be assembled");
+
+    // An empty destination list can never verify: the intent carries one
+    // signature but there is no input destination to check it against.
+    let result = verify_transaction_intent(&message, &signed.encode(), &[], Network::Mainnet);
+    assert!(
+        result.is_err(),
+        "verification with no destinations must fail"
+    );
+}
+
+#[test]
+fn partially_signed_transaction_roundtrip() {
+    let (_, address, transaction, output) = fake_utxo_transaction(make_private_key());
+    let destination = encode_destination(&address, Network::Mainnet).unwrap();
+
+    let ptx = encode_partially_signed_transaction(
+        transaction,
+        vec![None],
+        vec![Some(output)],
+        vec![Some(destination)],
+        vec![None],
+        TxAdditionalInfo::new(),
+        Network::Mainnet,
+    )
+    .expect("partially signed transaction must be assembled");
+
+    let json = decode_partially_signed_transaction_to_json(&ptx.encode(), Network::Mainnet)
+        .expect("partially signed transaction must decode to JSON");
+    assert_eq!(
+        json.get("type").and_then(|value| value.as_str()),
+        Some("V1"),
+        "partially signed transaction JSON must carry the V1 tag"
+    );
+    assert!(
+        json.get("tx").and_then(|value| value.as_object()).is_some(),
+        "partially signed transaction JSON must contain the transaction"
+    );
+}
+
+#[test]
+fn htlc_and_special_outputs_encode() {
+    let network = Network::Mainnet;
+    let key = make_private_key();
+    let address = pubkey_to_pubkeyhash_address(&public_key_from_private_key(&key), network);
+
+    // HTLC output whose secret hash is the SHA-256 hash of the empty string,
+    // truncated to the 20-byte HtlcSecretHash length the chain enforces
+    // (a full 32-byte hex string is rejected as "invalid length").
+    let htlc = encode_output_htlc(
+        Amount::from_atoms(1),
+        None,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4",
+        &address,
+        &address,
+        encode_lock_until_height(1_000_000),
+        network,
+    )
+    .expect("HTLC output must encode");
+    assert!(!htlc.encode().is_empty());
+
+    // NFT issuance on top of the pinned token id. "TCK" satisfies the
+    // 1..=12-byte alphanumeric ticker rule and the 32-byte media hash the
+    // minimum hash length.
+    let token_source =
+        encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let token_id =
+        get_token_id(&[encode_input_for_utxo(token_source, 0)], 500_000, network).unwrap();
+    let nft = encode_output_issue_nft(
+        &token_id, &address, "name", "TCK", "desc", &[1u8; 32], None, None, None, None, network,
+    )
+    .expect("NFT issuance output must encode");
+    assert!(!nft.encode().is_empty());
+
+    // Stake pool creation using a mainnet VRF public key from mintlayer-core's
+    // address test vectors.
+    let pool_source =
+        encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let pool_id = get_pool_id(&[encode_input_for_utxo(pool_source, 0)], network).unwrap();
+    let pool_data = encode_stake_pool_data(
+        Amount::from_atoms(1_000_000_000_000),
+        &address,
+        MAINNET_VRF_PUBLIC_KEY,
+        &address,
+        100,
+        Amount::from_atoms(1_000),
+        network,
+    )
+    .expect("stake pool data must encode");
+    let pool = encode_output_create_stake_pool(&pool_id, pool_data, network)
+        .expect("create-stake-pool output must encode");
+    assert!(!pool.encode().is_empty());
 }

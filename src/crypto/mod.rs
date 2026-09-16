@@ -8,10 +8,11 @@
 //! [mintlayer-core](https://github.com/mintlayer/mintlayer-core).
 //!
 //! The functions mirror the go-sdk `wasm` sub-client operation for operation,
-//! but exchange typed values ([`Transaction`], [`TxOutput`], [`PrivateKey`],
+//! but exchange typed values ([`Transaction`](types::Transaction),
+//! [`TxOutput`](types::TxOutput), [`PrivateKey`](types::PrivateKey),
 //! [`Amount`], ...) instead of opaque byte arrays. Every type participates in
-//! the SCALE encoding, so [`Encode`] and [`DecodeAll`] give byte-level access
-//! when needed.
+//! the SCALE encoding, so [`types::Encode`] and [`types::DecodeAll`] give
+//! byte-level access when needed.
 //!
 //! # Fork sensitivity
 //!

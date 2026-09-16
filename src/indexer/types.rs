@@ -350,13 +350,13 @@ pub struct Order {
     pub order_id: String,
     /// The destination that may conclude the order.
     pub conclude_destination: String,
-    /// The currency initially asked.
+    /// The currency initially given.
     pub give_currency: serde_json::Value,
     /// The amount initially given.
     pub initially_given: Amount,
     /// Remaining give balance.
     pub give_balance: Amount,
-    /// The currency initially given.
+    /// The currency initially asked.
     pub ask_currency: serde_json::Value,
     /// The amount initially asked.
     pub initially_asked: Amount,

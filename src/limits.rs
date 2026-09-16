@@ -12,8 +12,30 @@ use std::time::Duration;
 /// exhaustion from a misconfigured or hostile endpoint.
 pub(crate) const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
-/// Upper bound for the characters kept from a daemon error body.
-pub(crate) const MAX_ERROR_BODY_CHARS: usize = 8 * 1024;
-
 /// Default request timeout for the daemon HTTP clients.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Builds the default HTTP client: overall timeout and no redirects, so a
+/// misbehaving endpoint can never forward request bodies (which may carry
+/// credentials or mnemonics) to another host.
+pub(crate) fn default_http_client_with_timeout(
+    timeout: std::time::Duration,
+) -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+}
+
+/// Lazily built process-wide default HTTP client for the daemon RPC
+/// clients.
+#[cfg(any(feature = "node", feature = "wallet"))]
+pub(crate) fn default_http_client() -> reqwest::Client {
+    static DEFAULT_HTTP_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    DEFAULT_HTTP_CLIENT
+        .get_or_init(|| {
+            default_http_client_with_timeout(DEFAULT_TIMEOUT)
+                .expect("reqwest client with default settings must build")
+        })
+        .clone()
+}

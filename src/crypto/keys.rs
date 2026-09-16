@@ -53,7 +53,7 @@ pub fn make_default_account_privkey(
     let seed = zeroize::Zeroizing::new(mnemonic.to_seed(passphrase));
 
     let root_key = ExtendedPrivateKey::new_master(seed.as_ref(), ExtendedKeyKind::Secp256k1Schnorr)
-        .map_err(|error| Error::MessageSigning(error.to_string()))?;
+        .map_err(|error| Error::KeyDerivation(error.to_string()))?;
 
     let account_index = U31::ZERO;
     let path: DerivationPath = vec![
@@ -63,11 +63,11 @@ pub fn make_default_account_privkey(
     ]
     .try_into()
     .map_err(|error: crypto::key::hdkd::derivable::DerivationError| {
-        Error::InputSigning(error.to_string())
+        Error::KeyDerivation(error.to_string())
     })?;
     root_key
         .derive_absolute_path(&path)
-        .map_err(|error| Error::InputSigning(error.to_string()))
+        .map_err(|error| Error::KeyDerivation(error.to_string()))
 }
 
 /// Derives the receiving private key at `key_index` from an account key
@@ -124,7 +124,7 @@ fn derive_key<D: Derivable>(derivable: D, branch: ChildNumber, key_index: u32) -
     let index = U31::from_u32(key_index).ok_or(Error::InvalidKeyIndex)?;
     derivable
         .derive_child(branch)
-        .map_err(|error| Error::InputSigning(error.to_string()))?
+        .map_err(|error| Error::KeyDerivation(error.to_string()))?
         .derive_child(ChildNumber::from_normal(index))
-        .map_err(|error| Error::InputSigning(error.to_string()))
+        .map_err(|error| Error::KeyDerivation(error.to_string()))
 }

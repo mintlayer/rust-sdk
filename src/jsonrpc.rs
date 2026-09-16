@@ -15,7 +15,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::limits::{DEFAULT_TIMEOUT, MAX_RESPONSE_BYTES};
+use crate::limits::{DEFAULT_TIMEOUT, MAX_RESPONSE_BYTES, default_http_client_with_timeout};
 
 /// HTTP basic auth credentials with a redacted [`Debug`] implementation so
 /// that logging a client never leaks the password.
@@ -51,7 +51,7 @@ macro_rules! define_error {
             },
             /// The HTTP request to the daemon failed.
             #[error("HTTP request failed: {0}")]
-            Http(#[from] reqwest::Error),
+            Transport(#[from] reqwest::Error),
             /// The JSON-RPC response could not be decoded into the expected type.
             #[error("failed to decode JSON-RPC response: {0}")]
             Json(#[from] serde_json::Error),
@@ -75,7 +75,7 @@ macro_rules! define_error {
             fn from(err: crate::jsonrpc::RequestError) -> Self {
                 match err {
                     crate::jsonrpc::RequestError::Rpc { code, message } => Self::Rpc { code, message },
-                    crate::jsonrpc::RequestError::Http(err) => Self::Http(err),
+                    crate::jsonrpc::RequestError::Http(err) => Self::Transport(err),
                     crate::jsonrpc::RequestError::Json(err) => Self::Json(err),
                     crate::jsonrpc::RequestError::IdMismatch { expected, actual } => {
                         Self::IdMismatch { expected, actual }
@@ -179,12 +179,6 @@ impl Transport {
         // with the go-sdk client).
         let http_response = builder.send().await?;
         let response: Response = read_json_body(http_response).await?;
-        if let Some(err) = response.error {
-            return Err(RequestError::Rpc {
-                code: err.code,
-                message: err.message,
-            });
-        }
         match response.id {
             Some(actual) if actual.as_u64() == Some(id) => {}
             Some(actual) => {
@@ -199,6 +193,12 @@ impl Transport {
                     actual: serde_json::Value::Null,
                 });
             }
+        }
+        if let Some(err) = response.error {
+            return Err(RequestError::Rpc {
+                code: err.code,
+                message: err.message,
+            });
         }
         Ok(serde_json::from_value(response.result)?)
     }
@@ -268,7 +268,7 @@ impl ClientBuilder {
     pub(crate) fn build(self) -> Result<Transport, reqwest::Error> {
         let http = match self.http_client {
             Some(http) => http,
-            None => reqwest::Client::builder().timeout(self.timeout).build()?,
+            None => default_http_client_with_timeout(self.timeout)?,
         };
         Ok(Transport::from_parts(self.endpoint, http, self.basic_auth))
     }

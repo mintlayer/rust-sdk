@@ -7,8 +7,8 @@
 //! Lenient wire-format helpers for amounts and integers that daemons may
 //! encode either as JSON numbers or as decimal strings.
 
-/// `(de)serializes` a `u128` atom amount as a decimal string, accepting a
-/// decimal string or a plain integer when deserializing.
+/// Serializes a `u128` atom amount as a decimal string; accepts a decimal
+/// string or a plain integer when deserializing.
 pub(crate) mod atoms {
     use std::fmt;
 
@@ -69,8 +69,8 @@ pub(crate) mod atoms_object {
     }
 }
 
-/// `(de)serializes` a `u64` from a JSON integer or a decimal string;
-/// serializes a plain integer.
+/// Serializes a `u64` as a JSON integer; accepts an integer or a decimal
+/// string when deserializing.
 pub(crate) mod u64_lenient {
     use std::fmt;
 
@@ -104,8 +104,8 @@ pub(crate) mod u64_lenient {
     }
 }
 
-/// `(de)serializes` an `f64` ratio from an integer, a float, or a decimal
-/// string with an optional trailing `%`; serializes a plain float.
+/// Serializes an `f64` ratio as a plain float; accepts an integer, a float,
+/// or a decimal string with an optional trailing `%` when deserializing.
 pub(crate) mod f64_percent {
     use std::fmt;
 
@@ -144,8 +144,9 @@ pub(crate) mod f64_percent {
     }
 }
 
-/// `(de)serializes` an `Option<u128>` atom amount from a decimal string or
-/// integer; `null` and missing fields become `None`.
+/// Serializes an `Option<u128>` atom amount as a decimal string or `null`
+/// (with `skip_serializing_if` the field is omitted instead); accepts a
+/// decimal string, an integer, or `null` when deserializing.
 pub(crate) mod option_atoms_lenient {
     use std::fmt;
 

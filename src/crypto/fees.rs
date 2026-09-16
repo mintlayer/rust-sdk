@@ -13,6 +13,9 @@ use common::primitives::{Amount, BlockHeight};
 use super::Network;
 
 /// The fee for issuing a new fungible token.
+///
+/// `current_block_height` is currently unused and kept for signature parity
+/// with the height-dependent fee functions.
 pub fn fungible_token_issuance_fee(_current_block_height: u64, network: Network) -> Amount {
     super::chain_config(network).fungible_token_issuance_fee()
 }

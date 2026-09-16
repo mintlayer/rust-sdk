@@ -14,8 +14,9 @@ use httpmock::{Mock, Then};
 use serde_json::json;
 
 use mintlayer_sdk::wallet::{
-    Amount, Client, CreateOrderParams, CreateWalletParams, CurrencyFilter, Error, ListOrdersParams,
-    LockSupplyParams, OutputValue, RecoverWalletParams, SendParams, StakingStatus, TxOptions,
+    Amount, Client, ComposeParams, CreateOrderParams, CreateWalletParams, CurrencyFilter, Error,
+    ListOrdersParams, LockSupplyParams, Outpoint, OutpointSourceId, OutputValue,
+    RecoverWalletParams, SendParams, StakingStatus, TxOptions, UtxoSpendParams,
 };
 
 const RESPONSE_HEADERS: [(&str, &str); 1] = [("content-type", "application/json")];
@@ -544,4 +545,33 @@ async fn debug_output_redacts_mnemonics_and_passphrases() {
     let result_debug = format!("{result:?}");
     assert!(!result_debug.contains("top secret seed phrase"));
     assert!(result_debug.contains("<redacted>"));
+}
+
+#[tokio::test]
+async fn debug_output_redacts_htlc_secrets() {
+    let params = UtxoSpendParams {
+        account: 0,
+        utxo: Outpoint {
+            source_id: OutpointSourceId::Transaction {
+                tx_id: "aa".to_string(),
+            },
+            index: 0,
+        },
+        output_address: "mtc1qx".to_string(),
+        htlc_secret: Some("supersecret123".to_string()),
+        options: TxOptions::default(),
+    };
+    let spend_debug = format!("{params:?}");
+    assert!(!spend_debug.contains("supersecret123"));
+    assert!(spend_debug.contains("***"));
+
+    let params = ComposeParams {
+        inputs: vec![],
+        outputs: vec![],
+        htlc_secrets: Some(json!("supersecret456")),
+        only_transaction: true,
+    };
+    let compose_debug = format!("{params:?}");
+    assert!(!compose_debug.contains("supersecret456"));
+    assert!(compose_debug.contains("***"));
 }

@@ -92,11 +92,7 @@ async fn main() {
 }
 
 async fn run() -> Result<(), String> {
-    let args = parse_args();
-    let args = match args {
-        Ok(args) => args,
-        Err(error) => return Err(error),
-    };
+    let args = parse_args()?;
 
     let client = WalletClient::new(&args.wallet_rpc);
 

@@ -83,7 +83,9 @@ pub fn encode_signed_transaction(
 ///
 /// Every per-input list must have exactly one entry per transaction input;
 /// `None` marks an absent entry. `additional_info` must cover every
-/// `ProduceBlockFromStake`, `FillOrder` and `ConcludeOrder` input.
+/// `ProduceBlockFromStake`, `FillOrder` and `ConcludeOrder` input. The
+/// `network` parameter is currently unused (consistency checks are left to
+/// the daemon) and kept for API symmetry.
 #[allow(clippy::too_many_arguments)]
 pub fn encode_partially_signed_transaction(
     transaction: Transaction,
