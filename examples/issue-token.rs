@@ -21,8 +21,17 @@
 //! ```
 //!
 //! Only `--ticker` and `--supply` are required; open the wallet by passing
-//! `--wallet`. In production, wait for the issuance transaction to be
-//! confirmed before minting.
+//! `--wallet`. `--supply` is an atom count (the smallest indivisible unit),
+//! not a whole-token count. In production, wait for the issuance
+//! transaction to be confirmed before minting.
+//!
+//! # Secret handling
+//!
+//! Passing the wallet password as a command-line argument exposes it in
+//! shell history and the process list; prefer an environment variable or an
+//! interactive prompt. The password is sent to the wallet daemon in the RPC
+//! request body, so only point `--wallet-rpc` at a daemon you trust over a
+//! local or encrypted connection.
 
 use mintlayer_sdk::wallet::{
     Amount, Client as WalletClient, IssueTokenParams, MintParams, TokenMetadata, TokenSupply,

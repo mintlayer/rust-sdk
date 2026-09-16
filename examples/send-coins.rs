@@ -18,15 +18,40 @@
 //!     --network testnet
 //! ```
 //!
-//! The example intentionally sends the full balance of the derived address
-//! with no change output. All queried UTXOs belong to the sender, so the
-//! destination of each reconstructed input is the sender address itself.
+//! # Fee semantics
+//!
+//! The example sweeps every spendable Transfer/Coin UTXO of the derived
+//! address and emits a single output of `--amount` with no change output.
+//! In Mintlayer the fee is implicitly `sum(inputs) - sum(outputs)` and goes
+//! to the block producer, so the example requires `--amount` to equal the
+//! full swept total; anything less would silently overpay the miner and a
+//! zero-fee transaction is rejected by the mempool. Production code should
+//! add a change output sized from
+//! [`estimate_transaction_size`](mintlayer_sdk::crypto::estimate_transaction_size)
+//! and a fee rate fetched with the `feerate` endpoints.
+//!
+//! # Secret handling
+//!
+//! Passing the mnemonic as a command-line argument exposes it in shell
+//! history and the process list. For real funds, read it from an
+//! environment variable or an interactive prompt instead; the mnemonic never
+//! leaves this process (only the signed transaction hex is submitted).
+//! Timelocked (`LockThenTransfer`) outputs are skipped.
 
 use std::str::FromStr;
 
 use mintlayer_sdk::crypto::types::*;
 use mintlayer_sdk::crypto::{self, Amount, Network, SigHashType, SourceId, TxAdditionalInfo};
 use mintlayer_sdk::indexer::Client as IndexerClient;
+
+struct ParsedArgs {
+    mnemonic: String,
+    to: String,
+    amount: String,
+    indexer: String,
+    key_index: u32,
+    network: Network,
+}
 
 fn parse_args() -> Result<ParsedArgs, String> {
     let mut parsed = ParsedArgs {
@@ -55,10 +80,14 @@ fn parse_args() -> Result<ParsedArgs, String> {
                     "testnet" => Network::Testnet,
                     "regtest" => Network::Regtest,
                     "signet" => Network::Signet,
-                    other => return Err(format!("unknown network {other}")),
+                    _ => {
+                        return Err(
+                            "unknown network (use mainnet|testnet|regtest|signet)".to_owned()
+                        );
+                    }
                 };
             }
-            other => return Err(format!("unknown flag {other}")),
+            _ => return Err("unknown flag".to_owned()),
         }
     }
 
@@ -66,15 +95,6 @@ fn parse_args() -> Result<ParsedArgs, String> {
         return Err("required flags: --mnemonic, --to, --amount".to_owned());
     }
     Ok(parsed)
-}
-
-struct ParsedArgs {
-    mnemonic: String,
-    to: String,
-    amount: String,
-    indexer: String,
-    key_index: u32,
-    network: Network,
 }
 
 #[tokio::main]
@@ -98,6 +118,14 @@ async fn run() -> Result<(), String> {
     println!("sending from {from_address}");
 
     let indexer = IndexerClient::new(&args.indexer);
+
+    let tip = indexer
+        .tip()
+        .await
+        .map_err(|error| format!("failed to fetch chain tip: {error}"))?;
+    let inclusion_height = tip.block_height.checked_add(1).ok_or("chain tip overflow")?;
+    println!("predicting inclusion at height {inclusion_height}");
+
     let utxos = indexer
         .spendable_utxos(&from_address)
         .await
@@ -117,6 +145,9 @@ async fn run() -> Result<(), String> {
         };
         let source_id_bytes = hex::decode(&utxo.outpoint.source_id)
             .map_err(|error| format!("invalid source id hex: {error}"))?;
+        if source_id_bytes.len() != 32 {
+            return Err("source id is not 32 bytes".to_owned());
+        }
         let hash = H256::from_slice(&source_id_bytes);
         let outpoint_source_id = crypto::encode_outpoint_source_id(hash, SourceId::Transaction);
         inputs.push(crypto::encode_input_for_utxo(
@@ -130,14 +161,20 @@ async fn run() -> Result<(), String> {
             OutputValue::Coin(Amount::from_atoms(atoms)),
             destination,
         )));
-        total += atoms;
+        total = total.checked_add(atoms).ok_or_else(|| "UTXO total overflow".to_owned())?;
     }
 
     let amount = u128::from_str(&args.amount).map_err(|_| "invalid --amount")?;
-    if amount > total {
+    if amount != total {
         return Err(format!(
-            "requested {amount} atoms but only {total} atoms are spendable"
+            "this example sweeps the full balance with no change output: \
+             the difference between --amount ({amount}) and the swept total \
+             ({total}) would be paid to the block producer as fee. \
+             Pass --amount {total}, or add a change output in your own code."
         ));
+    }
+    if total <= amount {
+        return Err("the swept total leaves nothing for the transaction fee".to_owned());
     }
 
     let outputs = vec![
@@ -160,7 +197,7 @@ async fn run() -> Result<(), String> {
             &input_utxos,
             index,
             &TxAdditionalInfo::new(),
-            0,
+            inclusion_height,
             network,
         )
         .map_err(|error| format!("signing failed: {error}"))?;
