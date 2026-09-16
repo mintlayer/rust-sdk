@@ -73,6 +73,26 @@ required-features = ["crypto", "indexer"]
 name = "issue-token"
 required-features = ["wallet"]
 
+[[test]]
+name = "client"
+required-features = ["node", "indexer", "wallet", "crypto"]
+
+[[test]]
+name = "node"
+required-features = ["node"]
+
+[[test]]
+name = "indexer"
+required-features = ["indexer"]
+
+[[test]]
+name = "wallet"
+required-features = ["wallet"]
+
+[[test]]
+name = "crypto"
+required-features = ["crypto"]
+
 [dev-dependencies]
 hex = "0.4"
 httpmock = "0.7"
