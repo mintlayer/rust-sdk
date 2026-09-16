@@ -449,6 +449,30 @@ fn get_token_id_from_inputs() {
     );
 }
 
+#[test]
+fn token_id_fork_heights() {
+    let source_id = encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let fake_input = encode_input_for_utxo(source_id, 0);
+
+    let token_id_100k = get_token_id(std::slice::from_ref(&fake_input), 100_000, Network::Mainnet)
+        .expect("token id at height 100_000 must derive");
+    let token_id_500k = get_token_id(std::slice::from_ref(&fake_input), 500_000, Network::Mainnet)
+        .expect("token id at height 500_000 must derive");
+
+    assert_eq!(
+        token_id_100k, "mmltk1ht59xvv2sdxz28txuwryy55yl5qq9tf9657kvnqulfy9a2g3csssee4n2n",
+        "pins the token id derived at height 100_000 (before the token-id-generation V1 fork at 517_700)"
+    );
+    assert_eq!(
+        token_id_500k, "mmltk1ht59xvv2sdxz28txuwryy55yl5qq9tf9657kvnqulfy9a2g3csssee4n2n",
+        "pins the token id derived at height 500_000 (still before the token-id-generation V1 fork at 517_700)"
+    );
+    assert_eq!(
+        token_id_100k, token_id_500k,
+        "both heights are pre-fork, so the token id scheme must not have changed between them"
+    );
+}
+
 /// A mainnet VRF public key, taken from mintlayer-core's own address test
 /// vectors (`common/src/address/hexified.rs`), so that stake-pool creation can
 /// be exercised without deriving a VRF key (the SDK exposes no helper for it).
@@ -609,6 +633,20 @@ fn intents_roundtrip() {
     assert!(
         result.is_err(),
         "verification with no destinations must fail"
+    );
+}
+
+#[test]
+fn intent_message_vector_pin() {
+    let message = make_transaction_intent_message_to_sign(
+        "transfer",
+        "35a7938c2a2aad5ae324e7d0536de245bf9e439169aa3c16f1492be117e5d0e0",
+    )
+    .expect("intent message must be produced");
+    assert_eq!(
+        hex::encode(message.as_bytes()),
+        "3c74785f69643a333561373933386332613261616435616533323465376430353336646532343562663965343339313639616133633136663134393262653131376535643065303b696e74656e743a7472616e736665723e",
+        "pins the transaction-intent message format against accidental drift"
     );
 }
 
@@ -845,9 +883,11 @@ fn htlc_refund_multisig_cumulative() {
         500_000,
         network,
     );
+    let error = result.expect_err("a standard UTXO witness must not seed an HTLC multisig refund");
     assert!(
-        result.is_err(),
-        "a standard UTXO witness must not seed an HTLC multisig refund, got {result:?}"
+        matches!(error, Error::InputSigning(_)),
+        "a standard UTXO witness raw signature is not decodable as an HTLC spend, so the \
+         rejection must surface as InputSigning from extract_htlc_spend, got {error:?}"
     );
 
     assert!(
@@ -921,6 +961,12 @@ fn estimate_transaction_size_happy_path() {
     assert!(
         estimate > transaction.encode().len(),
         "estimate must cover the witness signatures, not just the unsigned transaction"
+    );
+
+    let unsigned_len = transaction.encode().len();
+    assert!(
+        estimate > unsigned_len + 60,
+        "estimate must include the per-input signature-size term (a schnorr pubkeyhash witness adds ~100 bytes), estimate={estimate}, unsigned={unsigned_len}"
     );
 
     assert!(

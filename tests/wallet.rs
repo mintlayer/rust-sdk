@@ -17,8 +17,9 @@ use serde_json::json;
 
 use mintlayer_sdk::wallet::{
     Amount, Client, ComposeParams, CreateOrderParams, CreateWalletParams, CurrencyFilter, Error,
-    ListOrdersParams, LockSupplyParams, Outpoint, OutpointSourceId, OutputValue,
-    RecoverWalletParams, SendParams, StakingStatus, TxOptions, UtxoSpendParams,
+    IssueTokenParams, ListOrdersParams, LockSupplyParams, Outpoint, OutpointSourceId, OutputValue,
+    RecoverWalletParams, SendParams, StakingStatus, TokenMetadata, TokenSendParams, TokenSupply,
+    TxOptions, UtxoSpendParams,
 };
 
 const MNEMONIC: &str =
@@ -551,4 +552,101 @@ async fn debug_output_redacts_htlc_secrets() {
     let compose_debug = format!("{params:?}");
     assert!(!compose_debug.contains("supersecret456"));
     assert!(compose_debug.contains("***"));
+}
+
+#[tokio::test]
+async fn send_token_wire_shape() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST).path("/").matches(|req| {
+            let body =
+                std::str::from_utf8(req.body.as_deref().unwrap_or_default()).unwrap_or_default();
+            body.contains("\"method\":\"token_send\"")
+                && body.contains("\"token_id\":\"mmltk1x\"")
+                && body.contains("\"address\":\"mtc1qy\"")
+                && body.contains("\"amount\":{\"atoms\":\"700\"}")
+                && !body.contains("\"selected_utxos\"")
+        });
+        respond(then, 200, rpc_ok(1, send_result()));
+    });
+
+    let client = Client::new(server.url("/"));
+    let params = TokenSendParams {
+        account: 0,
+        token_id: "mmltk1x".to_string(),
+        address: "mtc1qy".to_string(),
+        amount: Amount::from_atoms(700),
+        options: TxOptions::default(),
+    };
+    let result = client.send_token(params).await.unwrap();
+
+    assert_eq!(result.tx_id, "f0f1f2");
+    assert_eq!(result.fees.coins.atoms(), Some(100));
+    assert_eq!(result.fees.coins.decimal(), Some("0.000000001"));
+    assert!(result.fees.tokens.is_empty());
+    assert!(result.broadcasted);
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn issue_token_wire_shape_and_result() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST).path("/").matches(|req| {
+            let body =
+                std::str::from_utf8(req.body.as_deref().unwrap_or_default()).unwrap_or_default();
+            body.contains("\"method\":\"token_issue_new\"")
+                && body.contains("\"token_ticker\":\"MTK\"")
+                && body.contains("\"token_supply\":{\"type\":\"Lockable\"}")
+                && body.contains("\"is_freezable\":false")
+        });
+        respond(
+            then,
+            200,
+            rpc_ok(1, json!({ "token_id": "mmltk1new", "tx_id": "aabb" })),
+        );
+    });
+
+    let client = Client::new(server.url("/"));
+    let params = IssueTokenParams {
+        account: 0,
+        destination_address: "mtc1qauthority".to_string(),
+        metadata: TokenMetadata {
+            token_ticker: "MTK".to_string(),
+            number_of_decimals: 2,
+            metadata_uri: "https://example.com/token.json".to_string(),
+            token_supply: TokenSupply::Lockable,
+            is_freezable: false,
+        },
+        options: TxOptions::default(),
+    };
+    let result = client.issue_token(params).await.unwrap();
+
+    assert_eq!(result.token_id, "mmltk1new");
+    assert_eq!(result.tx_id, "aabb");
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn token_supply_serde_forms() {
+    let fixed = serde_json::to_string(&TokenSupply::Fixed(Amount::from_atoms(5))).unwrap();
+    assert!(fixed.contains("\"type\":\"Fixed\""), "got {fixed}");
+    assert!(fixed.contains("\"atoms\":\"5\""), "got {fixed}");
+
+    assert_eq!(
+        serde_json::to_string(&TokenSupply::Lockable).unwrap(),
+        r#"{"type":"Lockable"}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&TokenSupply::Unlimited).unwrap(),
+        r#"{"type":"Unlimited"}"#
+    );
+
+    let fixed: TokenSupply =
+        serde_json::from_str(r#"{"type":"Fixed","content":{"atoms":"5"}}"#).unwrap();
+    assert_eq!(fixed, TokenSupply::Fixed(Amount::from_atoms(5)));
+    let lockable: TokenSupply = serde_json::from_str(r#"{"type":"Lockable"}"#).unwrap();
+    assert_eq!(lockable, TokenSupply::Lockable);
+    let unlimited: TokenSupply = serde_json::from_str(r#"{"type":"Unlimited"}"#).unwrap();
+    assert_eq!(unlimited, TokenSupply::Unlimited);
 }

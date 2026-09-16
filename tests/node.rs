@@ -320,6 +320,81 @@ async fn submit_transaction_sends_trust_policy() {
 }
 
 #[tokio::test]
+async fn broadcast_transaction_uses_p2p_method() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST).path("/").matches(|req| {
+            let body =
+                std::str::from_utf8(req.body.as_deref().unwrap_or_default()).unwrap_or_default();
+            body.contains("\"method\":\"p2p_submit_transaction\"")
+                && body.contains("\"tx\":\"deadbeef\"")
+                && body.contains("\"trust_policy\":\"Trusted\"")
+                && !body.contains("\"method\":\"mempool_submit_transaction\"")
+        });
+        respond(then, 200, rpc_ok(1, json!(null)));
+    });
+
+    let client = Client::new(server.url("/"));
+    client.broadcast_transaction("deadbeef", TrustPolicy::Trusted).await.unwrap();
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn connected_peers_and_mempool_tx_decode() {
+    let server = MockServer::start();
+    let peers_mock = mock_rpc(
+        &server,
+        "\"method\":\"p2p_get_connected_peers\"".to_string(),
+        rpc_ok(
+            1,
+            json!([{
+                "peer_id": 7,
+                "address": "10.0.0.1:9333",
+                "peer_role": "OutboundFullRelay",
+                "ban_score": 0,
+                "user_agent": "mintlayer/1.3.0",
+                "software_version": "1.3.0",
+                "ping_wait": null,
+                "ping_last": 42,
+                "ping_min": 17,
+                "last_tip_block_time": 1_700_000_000,
+            }]),
+        ),
+    );
+    let tx_mock = mock_rpc(
+        &server,
+        "\"method\":\"mempool_get_transaction\"".to_string(),
+        rpc_ok(
+            2,
+            json!({ "id": "aabb", "status": "InMempool", "transaction": "deadbeef" }),
+        ),
+    );
+
+    let client = Client::new(server.url("/"));
+    let peers = client.connected_peers().await.unwrap();
+    assert_eq!(peers.len(), 1);
+    let peer = &peers[0];
+    assert_eq!(peer.peer_id, 7);
+    assert_eq!(peer.address, "10.0.0.1:9333");
+    assert_eq!(peer.peer_role, "OutboundFullRelay");
+    assert_eq!(peer.ban_score, 0);
+    assert_eq!(peer.user_agent, "mintlayer/1.3.0");
+    assert_eq!(peer.software_version, "1.3.0");
+    assert_eq!(peer.ping_wait, None);
+    assert_eq!(peer.ping_last, Some(42));
+    assert_eq!(peer.ping_min, Some(17));
+    assert_eq!(peer.last_tip_block_time, Some(1_700_000_000));
+
+    let tx = client.transaction("aabb").await.unwrap().expect("tx is in the mempool");
+    assert_eq!(tx.id, "aabb");
+    assert_eq!(tx.status, "InMempool");
+    assert_eq!(tx.transaction, "deadbeef");
+
+    assert_eq!(peers_mock.hits(), 1);
+    assert_eq!(tx_mock.hits(), 1);
+}
+
+#[tokio::test]
 async fn ban_serializes_duration_as_tuple() {
     let server = MockServer::start();
     let mock = mock_rpc(

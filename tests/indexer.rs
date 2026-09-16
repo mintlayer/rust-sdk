@@ -498,3 +498,312 @@ async fn error_body_is_sanitized() {
     sanitized_mock.assert();
     truncated_mock.assert();
 }
+
+#[tokio::test]
+async fn orders_by_pair_path_and_validation() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/order/pair/ML_mmltk1abc")
+            .query_param("items", "5");
+        respond(
+            then,
+            200,
+            json!([{
+                "order_id": "mordr1x",
+                "conclude_destination": "mtct1x",
+                "give_currency": {},
+                "initially_given": {"atoms": "1", "decimal": "0.00000000001"},
+                "give_balance": {"atoms": "1", "decimal": "0.00000000001"},
+                "ask_currency": {},
+                "initially_asked": {"atoms": "1", "decimal": "0.00000000001"},
+                "ask_balance": {"atoms": "1", "decimal": "0.00000000001"},
+                "nonce": "5"
+            }])
+            .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let orders = client
+        .orders_by_pair(
+            "ML",
+            "mmltk1abc",
+            PageOpts {
+                offset: 0,
+                items: 5,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].order_id, "mordr1x");
+    assert_eq!(orders[0].conclude_destination, "mtct1x");
+    assert_eq!(orders[0].nonce, Uint64(5));
+    assert_eq!(
+        orders[0].ask_balance,
+        Amount {
+            atoms: 1,
+            decimal: "0.00000000001".to_owned()
+        }
+    );
+    mock.assert();
+
+    // A currency containing a slash would alter the request path and must be
+    // rejected locally, before any request is sent.
+    let err = client
+        .orders_by_pair(
+            "bad/slash",
+            "x",
+            PageOpts {
+                offset: 0,
+                items: 5,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::InvalidUrl { .. }),
+        "expected InvalidUrl, got {err:?}"
+    );
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn oversized_response_rejected() {
+    let server = MockServer::start();
+    // A real oversized body: httpmock derives the content-length header from
+    // the body length (65 MiB + 10 > the 64 MiB cap), so the transport's
+    // content-length pre-check rejects the response before it is read.
+    let oversized = "0".repeat(65 * 1024 * 1024 + 10);
+    server.mock(|when, then| {
+        when.method(GET).path("/api/v2/chain/tip");
+        respond(then, 200, oversized);
+    });
+
+    let client = Client::new(server.url(""));
+    match client.tip().await {
+        Err(Error::ResponseTooLarge { limit }) => {
+            assert_eq!(limit, 64 * 1024 * 1024);
+        }
+        other => panic!("expected ResponseTooLarge, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn remaining_types_decode() {
+    let server = MockServer::start();
+
+    let stats_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/statistics/coin");
+        respond(
+            then,
+            200,
+            json!({
+                "circulating_supply": {"atoms": "1000", "decimal": "0.00000001"},
+                "preminted": {"atoms": "2000", "decimal": "0.00000002"},
+                "burned": {"atoms": "3000", "decimal": "0.00000003"},
+                "staked": {"atoms": "4000", "decimal": "0.00000004"},
+            })
+            .to_string(),
+        );
+    });
+    let token_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/token/mmltk1full");
+        respond(
+            then,
+            200,
+            json!({
+                "authority": "mtc1qauth",
+                "is_locked": false,
+                "circulating_supply": {"atoms": "700", "decimal": "0.7"},
+                "token_ticker": "MTK",
+                "metadata_uri": "https://example.com/token.json",
+                "number_of_decimals": 2,
+                "total_supply": {"type": "Lockable"},
+                "frozen": false,
+                "is_token_freezable": true,
+                "next_nonce": "3"
+            })
+            .to_string(),
+        );
+    });
+    let nft_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/nft/mmltk1nft");
+        respond(
+            then,
+            200,
+            json!({
+                "owner": "mtc1qowner",
+                "token_id": "mmltk1nft",
+                "metadata": {
+                    "creator": "02a1b2c3",
+                    "name": "Genesis NFT",
+                    "description": "The first NFT",
+                    "ticker": "GNFT",
+                    "icon_uri": null,
+                    "additional_metadata_uri": null,
+                    "media_uri": "https://example.com/media.png",
+                    "media_hash": "aabb"
+                }
+            })
+            .to_string(),
+        );
+    });
+    let merkle_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/transaction/aabb/merkle-path");
+        respond(
+            then,
+            200,
+            json!({
+                "block_id": "0000aa",
+                "transaction_index": 2,
+                "merkle_root": "ccdd",
+                "path": ["eeff", "1122"]
+            })
+            .to_string(),
+        );
+    });
+    let address_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/address/mxtc1q");
+        respond(
+            then,
+            200,
+            json!({
+                "coin_balance": {"atoms": "1000", "decimal": "0.00000001"},
+                "locked_coin_balance": {"atoms": "500", "decimal": "0.000000005"},
+                "transaction_history": ["aabb"],
+                "tokens": [
+                    {"token_id": "mmltk1x", "amount": {"atoms": "700", "decimal": "0.7"}}
+                ]
+            })
+            .to_string(),
+        );
+    });
+    let delegations_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/pool/mpool1x/delegations");
+        respond(
+            then,
+            200,
+            json!([{
+                "delegation_id": "tdelg1x",
+                "next_nonce": "7",
+                "spend_destination": "mtct1x",
+                "balance": {"atoms": "500", "decimal": "0.000000005"},
+                "creation_block_height": 10000
+            }])
+            .to_string(),
+        );
+    });
+    let token_txs_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/token/mmltk1x/transactions");
+        respond(
+            then,
+            200,
+            json!([{ "tx_global_index": 11, "tx_id": "aabb" }]).to_string(),
+        );
+    });
+    let tx_ids_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/block/0000aa/transaction-ids");
+        respond(then, 200, json!(["aabb", "ccdd"]).to_string());
+    });
+    let reward_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/block/0000aa/reward");
+        respond(then, 200, json!([{ "type": "Transfer" }]).to_string());
+    });
+    let genesis_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/chain/genesis");
+        respond(
+            then,
+            200,
+            json!({
+                "block_id": "000000genesishash",
+                "genesis_message": "Mintlayer genesis",
+                "timestamp": {"timestamp": 1_700_000_000},
+                "utxos": []
+            })
+            .to_string(),
+        );
+    });
+    let all_utxos_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/address/mxtc1q/all-utxos");
+        respond(
+            then,
+            200,
+            json!([{
+                "outpoint": {"source_id": "aabb", "index": 1},
+                "utxo": {"type": "Transfer"}
+            }])
+            .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+
+    let stats = client.coin_statistics().await.unwrap();
+    assert_eq!(stats.circulating_supply.atoms, 1000);
+    assert_eq!(stats.staked.atoms, 4000);
+
+    let token = client.token("mmltk1full").await.unwrap();
+    assert_eq!(token.token_ticker, "MTK");
+    assert_eq!(token.is_token_freezable, Some(true));
+    assert_eq!(token.next_nonce, Uint64(3));
+
+    let nft = client.nft("mmltk1nft").await.unwrap();
+    assert_eq!(nft.owner, "mtc1qowner");
+    assert_eq!(nft.metadata.name, "Genesis NFT");
+    assert_eq!(
+        nft.metadata.media_uri.as_deref(),
+        Some("https://example.com/media.png")
+    );
+
+    let merkle = client.transaction_merkle_path("aabb").await.unwrap();
+    assert_eq!(merkle.block_id, "0000aa");
+    assert_eq!(merkle.transaction_index, 2);
+    assert_eq!(merkle.path, vec!["eeff".to_owned(), "1122".to_owned()]);
+
+    let address = client.address_info("mxtc1q").await.unwrap();
+    assert_eq!(address.coin_balance.atoms, 1000);
+    assert_eq!(address.tokens.len(), 1);
+    assert_eq!(address.tokens[0].token_id, "mmltk1x");
+    assert_eq!(address.tokens[0].amount.atoms, 700);
+
+    let delegations = client.pool_delegations("mpool1x").await.unwrap();
+    assert_eq!(delegations.len(), 1);
+    assert_eq!(delegations[0].delegation_id, "tdelg1x");
+    assert_eq!(delegations[0].creation_block_height, Uint64(10000));
+
+    let token_txs = client.token_transactions("mmltk1x", PageOpts::default()).await.unwrap();
+    assert_eq!(token_txs.len(), 1);
+    assert_eq!(token_txs[0].tx_global_index, 11);
+    assert_eq!(token_txs[0].tx_id, "aabb");
+
+    assert_eq!(
+        client.block_transaction_ids("0000aa").await.unwrap(),
+        vec!["aabb".to_owned(), "ccdd".to_owned()]
+    );
+
+    let reward = client.block_reward("0000aa").await.unwrap();
+    assert_eq!(reward, vec![json!({ "type": "Transfer" })]);
+
+    let genesis = client.genesis().await.unwrap();
+    assert_eq!(genesis.genesis_message, "Mintlayer genesis");
+    assert_eq!(genesis.timestamp.timestamp, 1_700_000_000);
+
+    let utxos = client.all_utxos("mxtc1q").await.unwrap();
+    assert_eq!(utxos.len(), 1);
+    assert_eq!(utxos[0].outpoint.index, 1);
+    assert_eq!(utxos[0].output, json!({ "type": "Transfer" }));
+
+    stats_mock.assert();
+    token_mock.assert();
+    nft_mock.assert();
+    merkle_mock.assert();
+    address_mock.assert();
+    delegations_mock.assert();
+    token_txs_mock.assert();
+    tx_ids_mock.assert();
+    reward_mock.assert();
+    genesis_mock.assert();
+    all_utxos_mock.assert();
+}
