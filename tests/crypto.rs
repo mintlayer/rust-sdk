@@ -555,6 +555,14 @@ fn input_constructors_encode() {
         ),
     ];
 
+    let encoded: Vec<(&str, Vec<u8>)> =
+        cases.iter().map(|(name, build)| (*name, build().unwrap().encode())).collect();
+    for (i, (name_a, bytes_a)) in encoded.iter().enumerate() {
+        for (name_b, bytes_b) in encoded.iter().skip(i + 1) {
+            assert_ne!(bytes_a, bytes_b, "{name_a} and {name_b} encode identically");
+        }
+    }
+
     for (name, build) in cases {
         let input = build().unwrap_or_else(|error| panic!("{name} must encode: {error}"));
         assert!(
