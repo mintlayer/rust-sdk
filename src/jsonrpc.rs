@@ -15,11 +15,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Upper bound for a single JSON-RPC response body, guarding against memory
-/// exhaustion from a misconfigured or hostile endpoint.
-const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+use crate::limits::{DEFAULT_TIMEOUT, MAX_RESPONSE_BYTES};
 
 /// HTTP basic auth credentials with a redacted [`Debug`] implementation so
 /// that logging a client never leaks the password.

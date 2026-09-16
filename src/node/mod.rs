@@ -22,7 +22,8 @@ pub use types::{
     OrderInfo, Outpoint, OutpointSourceId, PeerInfo, Timestamp, TokenInfo, TrustPolicy,
 };
 
-use crate::jsonrpc::{self, DEFAULT_TIMEOUT};
+use crate::jsonrpc;
+use crate::limits::DEFAULT_TIMEOUT;
 
 static DEFAULT_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 

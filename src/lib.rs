@@ -36,6 +36,9 @@ mod jsonrpc;
 mod number;
 
 #[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]
+mod limits;
+
+#[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]
 mod client;
 
 #[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]

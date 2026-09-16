@@ -69,6 +69,81 @@ pub(crate) mod atoms_object {
     }
 }
 
+/// `(de)serializes` a `u64` from a JSON integer or a decimal string;
+/// serializes a plain integer.
+pub(crate) mod u64_lenient {
+    use std::fmt;
+
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    pub(crate) fn serialize<S: Serializer>(value: &u64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u64(*value)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+        struct U64Visitor;
+
+        impl Visitor<'_> for U64Visitor {
+            type Value = u64;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an integer or a decimal string")
+            }
+
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<u64, E> {
+                Ok(value)
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<u64, E> {
+                value.parse::<u64>().map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(U64Visitor)
+    }
+}
+
+/// `(de)serializes` an `f64` ratio from an integer, a float, or a decimal
+/// string with an optional trailing `%`; serializes a plain float.
+pub(crate) mod f64_percent {
+    use std::fmt;
+
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    pub(crate) fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(*value)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+        struct PercentVisitor;
+
+        impl Visitor<'_> for PercentVisitor {
+            type Value = f64;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a number or a decimal string with an optional trailing '%'")
+            }
+
+            fn visit_f64<E: de::Error>(self, value: f64) -> Result<f64, E> {
+                Ok(value)
+            }
+
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<f64, E> {
+                Ok(value as f64)
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<f64, E> {
+                let trimmed = value.strip_suffix('%').unwrap_or(value);
+                trimmed.parse::<f64>().map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(PercentVisitor)
+    }
+}
+
 /// Deserializes an `Option<u64>` that may arrive as `null`, an integer, or a
 /// decimal string; serializes integers and `null`.
 pub(crate) mod option_u64_lenient {
