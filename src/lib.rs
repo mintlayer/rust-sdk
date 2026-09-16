@@ -18,6 +18,7 @@
 //! | [`crypto`] | Cryptography & transaction building (native)         | —             |
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 #[cfg(feature = "crypto")]
 pub mod crypto;
@@ -28,8 +29,11 @@ pub mod node;
 #[cfg(feature = "wallet")]
 pub mod wallet;
 
-#[cfg(feature = "http")]
+#[cfg(any(feature = "node", feature = "wallet"))]
 mod jsonrpc;
+
+#[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]
+mod number;
 
 #[cfg(any(feature = "node", feature = "wallet", feature = "indexer"))]
 mod client;

@@ -1,0 +1,365 @@
+// Copyright (c) 2026 Mintlayer Institutional FZCO
+// Contact: hello@mintlayer.org
+//
+// Use of this source code is governed by an MIT license
+// that can be found in the LICENSE file.
+
+//! Wire-format tests for the node daemon client, mirroring the go-sdk
+//! `node/client_test.go` suite.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use httpmock::prelude::*;
+use httpmock::{Mock, Then};
+use serde_json::json;
+
+use mintlayer_sdk::node::{
+    Amount, BannedPeer, BannedTime, Client, Error, FeeRate, FeeRatePoint, Outpoint,
+    OutpointSourceId, TrustPolicy,
+};
+
+const RESPONSE_HEADERS: [(&str, &str); 1] = [("content-type", "application/json")];
+
+fn respond(then: Then, body: serde_json::Value) {
+    let mut builder = then.status(200);
+    for (name, value) in RESPONSE_HEADERS {
+        builder = builder.header(name, value);
+    }
+    builder.body(body.to_string());
+}
+
+fn rpc_ok(id: u64, result: serde_json::Value) -> serde_json::Value {
+    json!({ "jsonrpc": "2.0", "id": id, "result": result })
+}
+
+fn rpc_ok_no_id(result: serde_json::Value) -> serde_json::Value {
+    json!({ "jsonrpc": "2.0", "result": result })
+}
+
+fn mock_rpc(
+    server: &MockServer,
+    request_fragment: String,
+    response: serde_json::Value,
+) -> Mock<'_> {
+    server.mock(move |when, then| {
+        when.method(POST).path("/").body_contains(request_fragment);
+        respond(then, response);
+    })
+}
+
+#[tokio::test]
+async fn chainstate_info_roundtrip() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/")
+            .body_contains("\"jsonrpc\":\"2.0\"")
+            .body_contains("\"method\":\"chainstate_info\"")
+            .body_contains("\"params\":{}");
+        respond(
+            then,
+            rpc_ok(
+                1,
+                json!({
+                    "best_block_height": 123456,
+                    "best_block_id":
+                        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+                    "best_block_timestamp": { "timestamp": 1_700_000_000 },
+                    "median_time": { "timestamp": 1_699_999_500 },
+                    "is_initial_block_download": false,
+                }),
+            ),
+        );
+    });
+
+    let client = Client::new(server.url("/"));
+    let info = client.chainstate_info().await.unwrap();
+
+    assert_eq!(info.best_block_height, 123456);
+    assert_eq!(
+        info.best_block_id,
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+    );
+    assert_eq!(info.best_block_timestamp.timestamp, 1_700_000_000);
+    assert_eq!(info.median_time.timestamp, 1_699_999_500);
+    assert!(!info.is_initial_block_download);
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn scalar_methods_and_id_counter() {
+    let server = MockServer::start();
+    let id_mock = mock_rpc(&server, "\"id\":1,".to_string(), rpc_ok(1, json!("0000ff")));
+    let height_mock = mock_rpc(&server, "\"id\":2,".to_string(), rpc_ok(2, json!(7)));
+    let tx_mock = mock_rpc(&server, "\"id\":3,".to_string(), rpc_ok(3, json!(true)));
+    let memory_mock = mock_rpc(&server, "\"id\":4,".to_string(), rpc_ok(4, json!(2048)));
+
+    let client = Client::new(server.url("/"));
+    assert_eq!(client.best_block_id().await.unwrap(), "0000ff");
+    assert_eq!(client.best_block_height().await.unwrap(), 7);
+    assert!(client.contains_tx("aabb1234").await.unwrap());
+    assert_eq!(client.memory_usage().await.unwrap(), 2048);
+
+    assert_eq!(id_mock.hits(), 1);
+    assert_eq!(height_mock.hits(), 1);
+    assert_eq!(tx_mock.hits(), 1);
+    assert_eq!(memory_mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn optional_results_decode_null_as_none() {
+    let server = MockServer::start();
+    let mock = mock_rpc(
+        &server,
+        "\"jsonrpc\"".to_string(),
+        rpc_ok_no_id(json!(null)),
+    );
+
+    let client = Client::new(server.url("/"));
+    assert_eq!(client.block_id_at_height(999_999).await.unwrap(), None);
+    assert_eq!(client.stake_pool_balance("pool1abc").await.unwrap(), None);
+    assert_eq!(client.token_info("token1abc").await.unwrap(), None);
+    assert_eq!(mock.hits(), 3);
+}
+
+#[tokio::test]
+async fn rpc_error_is_surfaced() {
+    let server = MockServer::start();
+    mock_rpc(
+        &server,
+        "\"jsonrpc\"".to_string(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": { "code": -32601, "message": "Method not found" },
+        }),
+    );
+
+    let client = Client::new(server.url("/"));
+    let err = client.best_block_height().await.unwrap_err();
+    let display = err.to_string();
+    match err {
+        Error::Rpc { code, message } => {
+            assert_eq!(code, -32601);
+            assert_eq!(message, "Method not found");
+        }
+        other => panic!("expected Error::Rpc, got {other:?}"),
+    }
+    assert_eq!(display, "RPC error -32601: Method not found");
+}
+
+#[tokio::test]
+async fn basic_auth_header_is_sent() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST).path("/").header("authorization", "Basic dXNlcjpwYXNz");
+        respond(then, rpc_ok(1, json!(5)));
+    });
+
+    let client = Client::builder(server.url("/")).basic_auth("user", "pass").build().unwrap();
+    assert_eq!(client.best_block_height().await.unwrap(), 5);
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn get_utxo_serializes_tagged_outpoint() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST).path("/").json_body_partial(
+            json!({
+                "method": "chainstate_get_utxo",
+                "params": {
+                    "outpoint": {
+                        "source_id": {
+                            "type": "Transaction",
+                            "content": { "tx_id": "aabb" },
+                        },
+                        "index": 3,
+                    },
+                },
+            })
+            .to_string(),
+        );
+        respond(then, rpc_ok(1, json!({ "type": "Transfer" })));
+    });
+
+    let client = Client::new(server.url("/"));
+    let outpoint = Outpoint {
+        source_id: OutpointSourceId::Transaction {
+            tx_id: "aabb".to_string(),
+        },
+        index: 3,
+    };
+    let utxo = client.utxo(&outpoint).await.unwrap().unwrap();
+    assert_eq!(utxo, json!({ "type": "Transfer" }));
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn fee_rate_points_decode_tuple_wire() {
+    let server = MockServer::start();
+    mock_rpc(
+        &server,
+        "\"jsonrpc\"".to_string(),
+        rpc_ok(
+            1,
+            json!([
+                [1024, { "amount_per_kb": { "atoms": "500" } }],
+                [2048, { "amount_per_kb": { "atoms": "750" } }],
+            ]),
+        ),
+    );
+
+    let client = Client::new(server.url("/"));
+    let points = client.fee_rate_points().await.unwrap();
+    assert_eq!(
+        points,
+        vec![
+            FeeRatePoint {
+                size: 1024,
+                rate: FeeRate {
+                    amount_per_kb: Amount::from_atoms(500),
+                },
+            },
+            FeeRatePoint {
+                size: 2048,
+                rate: FeeRate {
+                    amount_per_kb: Amount::from_atoms(750),
+                },
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn banned_peers_decode_tuple_wire() {
+    let server = MockServer::start();
+    mock_rpc(
+        &server,
+        "\"jsonrpc\"".to_string(),
+        rpc_ok(1, json!([["1.2.3.4", { "time": [1_700_000_000, 123] }]])),
+    );
+
+    let client = Client::new(server.url("/"));
+    assert_eq!(
+        client.list_banned().await.unwrap(),
+        vec![BannedPeer {
+            address: "1.2.3.4".to_string(),
+            ban_time: BannedTime {
+                seconds: 1_700_000_000,
+                nanos: 123,
+            },
+        }]
+    );
+}
+
+#[tokio::test]
+async fn order_nonce_accepts_string_number_and_null() {
+    let server = MockServer::start();
+    let string_nonce_order = json!({
+        "conclude_key": "02a1b2c3",
+        "initially_asked": { "type": "Coin", "content": { "atoms": "1000" } },
+        "initially_given": { "type": "Token", "content": "ttoken1abc" },
+        "ask_balance": { "atoms": "1000" },
+        "give_balance": { "atoms": "250" },
+        "nonce": "5",
+        "is_frozen": false,
+    });
+    let null_nonce_order = json!({
+        "conclude_key": "02a1b2c3",
+        "initially_asked": { "type": "Coin", "content": { "atoms": "1000" } },
+        "initially_given": { "type": "Token", "content": "ttoken1abc" },
+        "ask_balance": { "atoms": "1000" },
+        "give_balance": { "atoms": "250" },
+        "nonce": null,
+        "is_frozen": false,
+    });
+    let string_mock = mock_rpc(
+        &server,
+        "\"id\":1,".to_string(),
+        rpc_ok(1, string_nonce_order),
+    );
+    let null_mock = mock_rpc(
+        &server,
+        "\"id\":2,".to_string(),
+        rpc_ok(2, null_nonce_order),
+    );
+
+    let client = Client::new(server.url("/"));
+    let order = client.order_info("order1").await.unwrap().unwrap();
+    assert_eq!(order.nonce, Some(5));
+    let order = client.order_info("order1").await.unwrap().unwrap();
+    assert_eq!(order.nonce, None);
+    assert_eq!(order.ask_balance, Amount::from_atoms(1000));
+    assert_eq!(order.give_balance, Amount::from_atoms(250));
+
+    assert_eq!(string_mock.hits(), 1);
+    assert_eq!(null_mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn submit_transaction_sends_trust_policy() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST).path("/").json_body_partial(
+            json!({
+                "method": "mempool_submit_transaction",
+                "params": {
+                    "tx": "deadbeef",
+                    "options": { "trust_policy": "Untrusted" },
+                },
+            })
+            .to_string(),
+        );
+        respond(then, rpc_ok(1, json!(null)));
+    });
+
+    let client = Client::new(server.url("/"));
+    client.submit_transaction("deadbeef", TrustPolicy::Untrusted).await.unwrap();
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn ban_serializes_duration_as_tuple() {
+    let server = MockServer::start();
+    let mock = mock_rpc(
+        &server,
+        "\"address\":\"1.2.3.4\",\"duration\":[3600,500000000]".to_string(),
+        rpc_ok(1, json!(null)),
+    );
+
+    let client = Client::new(server.url("/"));
+    client.ban("1.2.3.4", Duration::from_millis(3_600_500)).await.unwrap();
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn concurrent_calls_use_unique_ids() {
+    let server = MockServer::start();
+    let mut mocks = Vec::new();
+    for n in 1..=10u64 {
+        let matcher = format!("\"id\":{n},\"method\":\"chainstate_best_block_height\"");
+        mocks.push(mock_rpc(&server, matcher, rpc_ok(n, json!(n))));
+    }
+
+    let client = Client::new(server.url("/"));
+    let shared = Arc::new(client.clone());
+    let mut handles = Vec::new();
+    for _ in 0..10 {
+        let client = Arc::clone(&shared);
+        handles.push(tokio::spawn(async move {
+            client.best_block_height().await.unwrap()
+        }));
+    }
+
+    let mut heights = Vec::new();
+    for handle in handles {
+        heights.push(handle.await.unwrap());
+    }
+    heights.sort_unstable();
+    assert_eq!(heights, (1u64..=10).collect::<Vec<u64>>());
+    for mock in &mocks {
+        assert_eq!(mock.hits(), 1);
+    }
+}
