@@ -23,12 +23,14 @@ impl Client {
 
     /// Returns a transaction by id (`GET /transaction/{id}`).
     pub async fn transaction(&self, id: &str) -> Result<Transaction, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/transaction/{id}"), &[]).await
     }
 
     /// Returns the merkle path of a confirmed transaction
     /// (`GET /transaction/{id}/merkle-path`).
     pub async fn transaction_merkle_path(&self, id: &str) -> Result<MerklePath, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/transaction/{id}/merkle-path"), &[]).await
     }
 
@@ -39,6 +41,7 @@ impl Client {
         tx_id: &str,
         index: u32,
     ) -> Result<serde_json::Value, Error> {
+        let tx_id = super::validate_segment(tx_id)?;
         self.get(&format!("/transaction/{tx_id}/output/{index}"), &[]).await
     }
 

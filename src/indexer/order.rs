@@ -21,6 +21,7 @@ impl Client {
 
     /// Returns an order by its bech32 id (`GET /order/{id}`).
     pub async fn order(&self, id: &str) -> Result<Order, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/order/{id}"), &[]).await
     }
 
@@ -32,6 +33,8 @@ impl Client {
         give_currency: &str,
         opts: PageOpts,
     ) -> Result<Vec<Order>, Error> {
+        let ask_currency = super::validate_segment(ask_currency)?;
+        let give_currency = super::validate_segment(give_currency)?;
         self.get(
             &format!("/order/pair/{ask_currency}_{give_currency}"),
             &crate::indexer::page_query(opts.offset, opts.items),

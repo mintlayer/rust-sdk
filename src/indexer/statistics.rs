@@ -17,6 +17,7 @@ impl Client {
 
     /// Returns statistics for a token (`GET /statistics/token/{token_id}`).
     pub async fn token_statistics(&self, token_id: &str) -> Result<CoinStats, Error> {
+        let token_id = super::validate_segment(token_id)?;
         self.get(&format!("/statistics/token/{token_id}"), &[]).await
     }
 

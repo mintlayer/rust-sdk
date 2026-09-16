@@ -12,22 +12,26 @@ use crate::indexer::Client;
 impl Client {
     /// Returns a block with header and body (`GET /block/{id}`).
     pub async fn block(&self, id: &str) -> Result<Block, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/block/{id}"), &[]).await
     }
 
     /// Returns only the header of a block (`GET /block/{id}/header`).
     pub async fn block_header(&self, id: &str) -> Result<BlockHeader, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/block/{id}/header"), &[]).await
     }
 
     /// Returns the reward outputs of a block (`GET /block/{id}/reward`).
     pub async fn block_reward(&self, id: &str) -> Result<Vec<serde_json::Value>, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/block/{id}/reward"), &[]).await
     }
 
     /// Returns the ids of the transactions in a block
     /// (`GET /block/{id}/transaction-ids`).
     pub async fn block_transaction_ids(&self, id: &str) -> Result<Vec<String>, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/block/{id}/transaction-ids"), &[]).await
     }
 }

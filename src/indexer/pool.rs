@@ -23,6 +23,7 @@ impl Client {
 
     /// Returns a stake pool by its bech32 id (`GET /pool/{id}`).
     pub async fn pool(&self, id: &str) -> Result<Pool, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/pool/{id}"), &[]).await
     }
 
@@ -34,6 +35,7 @@ impl Client {
         struct Response {
             block_count: u64,
         }
+        let id = super::validate_segment(id)?;
         let response: Response = self
             .get(
                 &format!("/pool/{id}/block-stats"),
@@ -46,6 +48,7 @@ impl Client {
     /// Returns the delegations of a stake pool
     /// (`GET /pool/{id}/delegations`).
     pub async fn pool_delegations(&self, id: &str) -> Result<Vec<PoolDelegation>, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/pool/{id}/delegations"), &[]).await
     }
 }

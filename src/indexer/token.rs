@@ -21,6 +21,7 @@ impl Client {
 
     /// Returns a token by its bech32 id (`GET /token/{id}`).
     pub async fn token(&self, id: &str) -> Result<TokenInfo, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/token/{id}"), &[]).await
     }
 
@@ -30,6 +31,7 @@ impl Client {
         id: &str,
         opts: PageOpts,
     ) -> Result<Vec<TokenTx>, Error> {
+        let id = super::validate_segment(id)?;
         self.get(
             &format!("/token/{id}/transactions"),
             &crate::indexer::page_query(opts.offset, opts.items),
@@ -43,6 +45,7 @@ impl Client {
         ticker: &str,
         opts: PageOpts,
     ) -> Result<Vec<String>, Error> {
+        let ticker = super::validate_segment(ticker)?;
         self.get(
             &format!("/token/ticker/{ticker}"),
             &crate::indexer::page_query(opts.offset, opts.items),
@@ -52,6 +55,7 @@ impl Client {
 
     /// Returns an NFT by its bech32 token id (`GET /nft/{id}`).
     pub async fn nft(&self, id: &str) -> Result<NftInfo, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/nft/{id}"), &[]).await
     }
 }

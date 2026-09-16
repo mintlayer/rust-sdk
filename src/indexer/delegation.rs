@@ -12,6 +12,7 @@ use crate::indexer::Client;
 impl Client {
     /// Returns a delegation by its bech32 id (`GET /delegation/{id}`).
     pub async fn delegation(&self, id: &str) -> Result<Delegation, Error> {
+        let id = super::validate_segment(id)?;
         self.get(&format!("/delegation/{id}"), &[]).await
     }
 }

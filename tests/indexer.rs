@@ -437,3 +437,52 @@ async fn per_thousand_percent_forms() {
     assert_eq!(integer_nonce, Uint64(9));
     assert_eq!(serde_json::to_string(&Uint64(7)).unwrap(), "7");
 }
+
+#[tokio::test]
+async fn path_segments_are_validated() {
+    let server = MockServer::start();
+    let client = Client::new(server.url(""));
+    for input in ["../../admin", "a/b", "a?x=1", "a b", "%2e%2e", ""] {
+        let err = client.block(input).await.unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidUrl { .. }),
+            "got {err:?} for {input:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn error_body_is_sanitized() {
+    let server = MockServer::start();
+    let sanitized_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/order/unknown");
+        then.status(404)
+            .header("content-type", "text/plain")
+            .body("not\nfound\rwith\x07bell");
+    });
+    let truncated_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/order/truncated");
+        then.status(404).header("content-type", "text/plain").body("x".repeat(20_000));
+    });
+
+    let client = Client::new(server.url(""));
+    match client.order("unknown").await {
+        Err(Error::Http { status_code, body }) => {
+            assert_eq!(status_code, 404);
+            assert_eq!(body, "notfoundwithbell");
+        }
+        other => panic!("expected Error::Http, got {other:?}"),
+    }
+
+    match client.order("truncated").await {
+        Err(Error::Http { status_code, body }) => {
+            assert_eq!(status_code, 404);
+            assert_eq!(body.chars().count(), 8192);
+            assert!(body.chars().all(|c| c == 'x'));
+        }
+        other => panic!("expected Error::Http, got {other:?}"),
+    }
+
+    sanitized_mock.assert();
+    truncated_mock.assert();
+}

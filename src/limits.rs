@@ -12,5 +12,8 @@ use std::time::Duration;
 /// exhaustion from a misconfigured or hostile endpoint.
 pub(crate) const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
+/// Upper bound for the characters kept from a daemon error body.
+pub(crate) const MAX_ERROR_BODY_CHARS: usize = 8 * 1024;
+
 /// Default request timeout for the daemon HTTP clients.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);

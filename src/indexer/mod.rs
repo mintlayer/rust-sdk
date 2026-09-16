@@ -31,7 +31,7 @@ pub use types::{
     Transaction, Uint64, Utxo, UtxoOutpoint,
 };
 
-use crate::limits::{DEFAULT_TIMEOUT, MAX_RESPONSE_BYTES};
+use crate::limits::{DEFAULT_TIMEOUT, MAX_ERROR_BODY_CHARS, MAX_RESPONSE_BYTES};
 
 /// Client for the Mintlayer indexer REST API (api-web-server).
 #[derive(Debug, Clone)]
@@ -102,7 +102,12 @@ impl Client {
     async fn decode<R: DeserializeOwned>(&self, response: reqwest::Response) -> Result<R, Error> {
         let status = response.status();
         if status.is_client_error() || status.is_server_error() {
-            let body = response.text().await.unwrap_or_default();
+            let bytes = Self::read_capped(response).await.unwrap_or_default();
+            let body: String = String::from_utf8_lossy(&bytes)
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(MAX_ERROR_BODY_CHARS)
+                .collect();
             return Err(Error::Http {
                 status_code: status.as_u16(),
                 body: body.trim().to_owned(),
@@ -144,6 +149,19 @@ pub(crate) fn page_query(offset: u32, items: u32) -> Vec<(&'static str, String)>
         query.push(("items", items.to_string()));
     }
     query
+}
+
+/// Validates that a caller-supplied path segment cannot alter the request
+/// path (ids and addresses are bech32 or hex; tickers are alphanumeric).
+pub(crate) fn validate_segment(segment: &str) -> Result<&str, Error> {
+    if !segment.is_empty()
+        && segment.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Ok(segment);
+    }
+    Err(Error::InvalidUrl {
+        message: format!("invalid path segment: {segment:?}"),
+    })
 }
 
 /// Builder for [`Client`].
