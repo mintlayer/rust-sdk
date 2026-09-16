@@ -7,7 +7,9 @@
 //! Cryptography and transaction-building tests, mirroring the go-sdk
 //! `wasm/client_test.go` suite and the wasm-wrappers test vectors.
 
-use mintlayer_sdk::crypto::types::{Encode, H256, PrivateKey, Transaction, TxOutput};
+use mintlayer_sdk::crypto::types::{
+    DecodeAll, Encode, H256, InputWitness, PrivateKey, Transaction, TxOutput,
+};
 use mintlayer_sdk::crypto::{
     Amount, Network, SigHashType, SourceId, TxAdditionalInfo, data_deposit_fee,
     decode_signed_transaction_to_json, decode_transaction, decode_transaction_lenient,
@@ -15,8 +17,8 @@ use mintlayer_sdk::crypto::{
     encode_lock_for_seconds, encode_lock_until_height, encode_lock_until_time,
     encode_outpoint_source_id, encode_output_transfer, encode_signed_transaction,
     encode_transaction, encode_witness, encode_witness_no_signature, estimate_transaction_size,
-    fungible_token_issuance_fee, get_pool_id, make_default_account_privkey, make_private_key,
-    make_receiving_address, nft_issuance_fee, pubkey_to_pubkeyhash_address,
+    fungible_token_issuance_fee, get_pool_id, get_token_id, make_default_account_privkey,
+    make_private_key, make_receiving_address, nft_issuance_fee, pubkey_to_pubkeyhash_address,
     public_key_from_private_key, sign_challenge, sign_message_for_spending,
     staking_pool_spend_maturity_block_count, token_change_authority_fee, token_freeze_fee,
     token_supply_change_fee, transaction_id, verify_challenge, verify_signature_for_spending,
@@ -36,11 +38,18 @@ const TESTNET_RECEIVING_1: &str =
     "00114be4d2511116792ca87760973ba299ad94a5a8ddb3ab491ecfa7e62d613745";
 
 const EXPECTED_TX_ID: &str = "35a7938c2a2aad5ae324e7d0536de245bf9e439169aa3c16f1492be117e5d0e0";
+
+/// A fixed Schnorr private key (a public test vector, identical to
+/// `MAINNET_RECEIVING_0`), so that `witness_roundtrip_on_fake_tx` exercises a
+/// deterministic key instead of a randomly generated one. Schnorr signing
+/// itself still draws fresh auxiliary randomness per signature, so only the
+/// deterministic properties of the witness can be asserted.
+const FIXED_SIGNING_PRIVKEY: &str =
+    "00b88adfb44da2c1fd5f12f7996bd147f45bd0b8917fa8842d4c901b965d5dad1f";
 const TX_HEX: &str = "0100040000ff5d9a94390ee97208d31aa5c3b5ddbd8df9d308069df2ebf5283f7ce3e4261401000000080340f9924e4da0af7dc8c5be71a9c9e05962c7bf4ef96127fde7a7b4e1469e48620f0080e03779c31102000365807e3b4147cb978b78715e60606092f89dc769586e98456850bd3b449c87b400203015e9ef9fc142569e0f966bc0188464fa712a841e14002e0fe952a076a26c01e539c5f0ceba927ab8f8f55f274af739ce4eef3700000b00204aa9d10100000b409e4c355d010199e4ec3a5b176140ef9cd58c7d3579fdb0ecb21a";
 const TX_SIGNED_HEX: &str = "0100040000ff5d9a94390ee97208d31aa5c3b5ddbd8df9d308069df2ebf5283f7ce3e4261401000000080340f9924e4da0af7dc8c5be71a9c9e05962c7bf4ef96127fde7a7b4e1469e48620f0080e03779c31102000365807e3b4147cb978b78715e60606092f89dc769586e98456850bd3b449c87b400203015e9ef9fc142569e0f966bc0188464fa712a841e14002e0fe952a076a26c01e539c5f0ceba927ab8f8f55f274af739ce4eef3700000b00204aa9d10100000b409e4c355d010199e4ec3a5b176140ef9cd58c7d3579fdb0ecb21a0401018d010002eddd003bfb6333123e682abe6923da1d38faa4f0e0d9e2ee42d5aa46c152a34800a749a30c8c9c33696ce407fc145ebc9824e17b778d0d9ccc8129be52f37b74160e60f6689ac2f481071e1a63d9cf0f6eab84c2703b5e9f229cd8188ce092edd4";
 
-fn fake_utxo_transaction() -> (PrivateKey, String, Transaction, TxOutput) {
-    let private_key = make_private_key();
+fn fake_utxo_transaction(private_key: PrivateKey) -> (PrivateKey, String, Transaction, TxOutput) {
     let public_key = public_key_from_private_key(&private_key);
     let address = pubkey_to_pubkeyhash_address(&public_key, Network::Mainnet);
     let output = encode_output_transfer(
@@ -157,7 +166,7 @@ fn transaction_get_id_vector() {
 
 #[test]
 fn encode_transaction_roundtrip() {
-    let (_, _, transaction, _) = fake_utxo_transaction();
+    let (_, _, transaction, _) = fake_utxo_transaction(make_private_key());
 
     let tx_id = transaction_id(&transaction);
     assert_eq!(tx_id.len(), 64);
@@ -169,39 +178,85 @@ fn encode_transaction_roundtrip() {
 
 #[test]
 fn timelocks_encode() {
-    let locks = [
-        encode_lock_for_block_count(100),
-        encode_lock_for_seconds(86_400),
-        encode_lock_until_time(1_700_000_000),
-        encode_lock_until_height(500_000),
-    ];
-    for lock in locks {
-        assert!(!lock.encode().is_empty());
-    }
+    // Exact SCALE encodings of the OutputTimeLock variants.
+    assert_eq!(
+        encode_lock_for_block_count(100).encode(),
+        hex::decode("029101").unwrap(),
+        "ForBlockCount(100): variant 0x02 + compact(100) = 0xa1 0x01"
+    );
+    assert_eq!(
+        encode_lock_for_seconds(86_400).encode(),
+        hex::decode("0302460500").unwrap(),
+        "ForSeconds(86400): variant 0x03 + compact(86400) = 0x01 0x46 0x05 0x00"
+    );
+    assert_eq!(
+        encode_lock_until_height(500_000).encode(),
+        hex::decode("0082841e00").unwrap(),
+        "UntilHeight(500000): variant 0x00 + compact(500000) = 0x82 0x84 0x1e 0x00"
+    );
+    assert_eq!(
+        encode_lock_until_time(1_700_000_000).encode(),
+        hex::decode("010300f15365").unwrap(),
+        "UntilTime(1700000000): variant 0x01 + compact(1700000000) = 0x03 0x00 0xf1 0x53 0x65"
+    );
 }
 
 #[test]
-fn fees_are_non_zero() {
+fn fees_match_consensus_values() {
     let height = 500_000u64;
     let network = Network::Mainnet;
 
-    assert!(fungible_token_issuance_fee(height, network).into_atoms() > 0);
-    assert!(nft_issuance_fee(height, network).into_atoms() > 0);
-    assert!(data_deposit_fee(height, network).into_atoms() > 0);
-    assert!(token_supply_change_fee(height, network).into_atoms() > 0);
-    assert!(token_freeze_fee(height, network).into_atoms() > 0);
-    assert!(token_change_authority_fee(height, network).into_atoms() > 0);
+    // Consensus fee schedule at Mainnet height 500_000, pinned in atoms.
+    assert_eq!(
+        fungible_token_issuance_fee(height, network).into_atoms(),
+        10_000_000_000_000u128,
+        "fungible token issuance fee"
+    );
+    assert_eq!(
+        nft_issuance_fee(height, network).into_atoms(),
+        500_000_000_000u128,
+        "NFT issuance fee"
+    );
+    assert_eq!(
+        data_deposit_fee(height, network).into_atoms(),
+        2_000_000_000_000u128,
+        "data deposit fee"
+    );
+    assert_eq!(
+        token_supply_change_fee(height, network).into_atoms(),
+        5_000_000_000_000u128,
+        "token supply change fee"
+    );
+    assert_eq!(
+        token_freeze_fee(height, network).into_atoms(),
+        5_000_000_000_000u128,
+        "token freeze fee"
+    );
+    assert_eq!(
+        token_change_authority_fee(height, network).into_atoms(),
+        2_000_000_000_000u128,
+        "token change authority fee"
+    );
 }
 
 #[test]
 fn staking_helpers() {
+    // Post-fork Mainnet maturity is exactly 7200 blocks.
     let maturity = staking_pool_spend_maturity_block_count(500_000, Network::Mainnet);
-    assert!(maturity > 0);
+    assert_eq!(
+        maturity, 7200,
+        "staking pool spend maturity at Mainnet height 500_000"
+    );
 
     let pledge = Amount::from_atoms(1_000_000_000_000_000);
     let pool_balance = Amount::from_atoms(10_000_000_000_000_000);
-    let effective = effective_pool_balance(Network::Mainnet, pledge, pool_balance).unwrap();
-    assert!(effective.into_atoms() > 0);
+    let effective = effective_pool_balance(Network::Mainnet, pledge, pool_balance)
+        .expect("effective pool balance must be computable");
+    assert_eq!(
+        effective.into_atoms(),
+        9_309_784_157_607_562u128,
+        "pledge-capped effective balance"
+    );
 }
 
 #[test]
@@ -259,7 +314,21 @@ fn encode_witness_no_signature_encodes() {
 
 #[test]
 fn witness_roundtrip_on_fake_tx() {
-    let (private_key, address, transaction, output) = fake_utxo_transaction();
+    // Schnorr signing derives fresh auxiliary randomness for every signature,
+    // so the signature bytes cannot be hex-pinned. Instead the test anchors on
+    // a FIXED private key and asserts every deterministic property of the
+    // produced witness.
+    let fixed_key = <PrivateKey as DecodeAll>::decode_all(
+        &mut &hex::decode(FIXED_SIGNING_PRIVKEY).unwrap()[..],
+    )
+    .expect("fixed private key must decode");
+    assert_eq!(
+        hex::encode(fixed_key.encode()),
+        FIXED_SIGNING_PRIVKEY,
+        "fixed private key must survive a decode/encode roundtrip"
+    );
+
+    let (private_key, address, transaction, output) = fake_utxo_transaction(fixed_key);
 
     let witness = encode_witness(
         SigHashType::all(),
@@ -273,6 +342,15 @@ fn witness_roundtrip_on_fake_tx() {
         Network::Mainnet,
     )
     .unwrap();
+
+    // (a) The produced witness must decode back into an InputWitness.
+    let decoded_witness =
+        InputWitness::decode_all(&mut &witness.encode()[..]).expect("witness must decode");
+    // (b) It must be a standard signature authorizing every sighash mode.
+    let InputWitness::Standard(signature) = &decoded_witness else {
+        panic!("witness must be a standard input signature, got {decoded_witness:?}");
+    };
+    assert_eq!(signature.sighash_type(), SigHashType::all());
 
     let signed = encode_signed_transaction(transaction, vec![witness]).unwrap();
     let json = decode_signed_transaction_to_json(&signed.encode(), Network::Mainnet).unwrap();
@@ -305,5 +383,20 @@ fn get_pool_id_from_inputs() {
     let fake_input = encode_input_for_utxo(source_id, 0);
 
     let pool_id = get_pool_id(&[fake_input], Network::Mainnet).unwrap();
-    assert!(pool_id.starts_with("mpool"), "unexpected pool id {pool_id}");
+    assert_eq!(
+        pool_id, "mpool1zte8hxywgpaqw4xalxpj2kxmuj83tprw2f7rgcgweytmv45kfzyqduwah5",
+        "pool id derived from an all-zero-hash outpoint"
+    );
+}
+
+#[test]
+fn get_token_id_from_inputs() {
+    let source_id = encode_outpoint_source_id(H256::from_slice(&[0u8; 32]), SourceId::Transaction);
+    let fake_input = encode_input_for_utxo(source_id, 0);
+
+    let token_id = get_token_id(&[fake_input], 500_000, Network::Mainnet).unwrap();
+    assert_eq!(
+        token_id, "mmltk1ht59xvv2sdxz28txuwryy55yl5qq9tf9657kvnqulfy9a2g3csssee4n2n",
+        "token id derived from an all-zero-hash outpoint at height 500_000"
+    );
 }
