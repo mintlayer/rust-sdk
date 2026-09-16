@@ -436,7 +436,11 @@ fn input_constructors_encode() {
     let fresh_authority =
         pubkey_to_pubkeyhash_address(&public_key_from_private_key(&make_private_key()), network);
 
-    let cases: Vec<(&str, Box<dyn Fn() -> Result<TxInput, Error>>)> = vec![
+    // Type alias to avoid clippy::type_complexity on the cases vector. The
+    // trait object bound is tied to 'a so the closures may borrow locals.
+    type InputCase<'a> = (&'a str, Box<dyn Fn() -> Result<TxInput, Error> + 'a>);
+
+    let cases: Vec<InputCase> = vec![
         (
             "withdraw_from_delegation",
             Box::new(|| {
