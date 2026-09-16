@@ -33,6 +33,11 @@ Errors are returned as `indexer::Error`:
 
 ---
 
+
+> **Transport security:** loopback `http://` is fine; the indexer API is
+> unauthenticated. For remote indexers prefer an `https://` URL so response
+> data cannot be tampered with in transit.
+
 ## Pagination
 
 List endpoints take `PageOpts`:

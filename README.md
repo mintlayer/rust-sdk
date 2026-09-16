@@ -73,16 +73,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("chain tip: height={} id={}", tip.block_height, tip.block_id);
 
     // Derive an address natively (no runtime initialisation).
-    let account = crypto::make_default_account_privkey(MNEMONIC, crypto::Network::Mainnet, None)?;
+    let account = crypto::make_default_account_privkey(MNEMONIC, crypto::Network::Testnet, None)?;
     let spend = crypto::make_receiving_address(&account, 0)?;
     let address = crypto::pubkey_to_pubkeyhash_address(
         &crypto::public_key_from_private_key(&spend),
-        crypto::Network::Mainnet,
+        crypto::Network::Testnet,
     );
     println!("address: {address}");
     Ok(())
 }
 
+// The well-known public BIP39 test mnemonic. Never send real funds to
+// addresses derived from it; use your own mnemonic read from an environment
+// variable or an interactive prompt.
 const MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 ```
 

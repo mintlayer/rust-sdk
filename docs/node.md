@@ -31,6 +31,11 @@ Errors are returned as `node::Error`:
 
 ---
 
+
+> **Transport security:** loopback `http://` is fine. For remote daemons use
+> an `https://` URL (TLS is built in via rustls) or an authenticated tunnel —
+> basic-auth credentials otherwise transit in cleartext with every request.
+
 ## Chain state
 
 | Method | RPC method | Notes |

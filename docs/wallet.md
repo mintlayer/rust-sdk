@@ -26,6 +26,11 @@ at 64 MiB.
 
 ---
 
+
+> **Transport security:** loopback `http://` is fine. For remote daemons use
+> an `https://` URL or an authenticated tunnel — basic-auth credentials and
+> daemon-generated mnemonics otherwise transit in cleartext.
+
 ## Wallet lifecycle
 
 | Method | RPC method | Notes |
