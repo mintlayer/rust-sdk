@@ -15,7 +15,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::limits::{DEFAULT_TIMEOUT, MAX_RESPONSE_BYTES, default_http_client_with_timeout};
+use crate::limits::{DEFAULT_TIMEOUT, default_http_client_with_timeout};
 
 /// HTTP basic auth credentials with a redacted [`Debug`] implementation so
 /// that logging a client never leaks the password.
@@ -204,25 +204,12 @@ impl Transport {
     }
 }
 
-async fn read_json_body(mut http_response: reqwest::Response) -> Result<Response, RequestError> {
-    if http_response
-        .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
-    {
-        return Err(RequestError::ResponseTooLarge {
-            limit: MAX_RESPONSE_BYTES,
-        });
-    }
-    let mut body: Vec<u8> = Vec::new();
-    while let Some(chunk) = http_response.chunk().await? {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(RequestError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(serde_json::from_slice(&body)?)
+async fn read_json_body(http_response: reqwest::Response) -> Result<Response, RequestError> {
+    let bytes = crate::limits::read_capped_body(http_response, |limit| {
+        RequestError::ResponseTooLarge { limit }
+    })
+    .await?;
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 /// Shared builder state for the node and wallet clients.

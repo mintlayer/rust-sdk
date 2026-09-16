@@ -39,3 +39,30 @@ pub(crate) fn default_http_client() -> reqwest::Client {
         })
         .clone()
 }
+
+/// Reads a daemon response body in chunks, rejecting anything beyond
+/// [`MAX_RESPONSE_BYTES`] before it can exhaust memory.
+///
+/// `too_large` constructs the caller's own body-size error.
+pub(crate) async fn read_capped_body<E>(
+    mut response: reqwest::Response,
+    too_large: fn(usize) -> E,
+) -> Result<Vec<u8>, E>
+where
+    E: From<reqwest::Error>,
+{
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(too_large(MAX_RESPONSE_BYTES));
+    }
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err(too_large(MAX_RESPONSE_BYTES));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}

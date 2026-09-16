@@ -31,7 +31,7 @@ pub use types::{
     Transaction, Uint64, Utxo, UtxoOutpoint,
 };
 
-use crate::limits::{DEFAULT_TIMEOUT, MAX_RESPONSE_BYTES};
+use crate::limits::DEFAULT_TIMEOUT;
 
 /// Upper bound for the characters kept from a daemon error body.
 const MAX_ERROR_BODY_CHARS: usize = 8 * 1024;
@@ -120,25 +120,8 @@ impl Client {
         Ok(serde_json::from_slice(&bytes)?)
     }
 
-    async fn read_capped(mut response: reqwest::Response) -> Result<Vec<u8>, Error> {
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
-        {
-            return Err(Error::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        let mut body: Vec<u8> = Vec::new();
-        while let Some(chunk) = response.chunk().await? {
-            if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-                return Err(Error::ResponseTooLarge {
-                    limit: MAX_RESPONSE_BYTES,
-                });
-            }
-            body.extend_from_slice(&chunk);
-        }
-        Ok(body)
+    async fn read_capped(response: reqwest::Response) -> Result<Vec<u8>, Error> {
+        crate::limits::read_capped_body(response, |limit| Error::ResponseTooLarge { limit }).await
     }
 }
 
