@@ -335,6 +335,40 @@ async fn ban_serializes_duration_as_tuple() {
 }
 
 #[tokio::test]
+async fn debug_output_redacts_basic_auth() {
+    let server = MockServer::start();
+    let builder = Client::builder(server.url("/")).basic_auth("secretuser", "secretpass");
+    let builder_debug = format!("{builder:?}");
+    let client = builder.build().unwrap();
+    let client_debug = format!("{client:?}");
+    for output in [builder_debug, client_debug] {
+        assert!(!output.contains("secretuser"));
+        assert!(!output.contains("secretpass"));
+        assert!(output.contains("***"));
+    }
+}
+
+#[tokio::test]
+async fn oversized_responses_are_rejected() {
+    let server = MockServer::start();
+    // A real oversized body: httpmock derives the content-length header from
+    // the body length (65 MiB + 10 > the 64 MiB cap), so the transport's
+    // content-length pre-check rejects the response before it is read.
+    let oversized = "0".repeat(65 * 1024 * 1024 + 10);
+    server.mock(|when, then| {
+        when.method(POST).path("/");
+        then.status(200).header("content-type", "application/json").body(oversized);
+    });
+    let client = Client::new(server.url("/"));
+    match client.best_block_height().await {
+        Err(Error::ResponseTooLarge { limit }) => {
+            assert_eq!(limit, 64 * 1024 * 1024);
+        }
+        other => panic!("expected ResponseTooLarge, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn concurrent_calls_use_unique_ids() {
     let server = MockServer::start();
     let mut mocks = Vec::new();
