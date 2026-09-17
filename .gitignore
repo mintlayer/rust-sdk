@@ -1,0 +1,26 @@
+# ── Rust build artefacts ──────────────────────────────────────────────────────
+/target
+
+# Test / coverage output
+*.profraw
+tarpaulin-report.html
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ── misc ──────────────────────────────────────────────────────────────────────
+.wrangler/
+
+# ── secrets: never commit credentials or key material ────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+.cargo/credentials
