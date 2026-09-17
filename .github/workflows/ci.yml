@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["--no-default-features", "--no-default-features --features node", "--no-default-features --features indexer", "--no-default-features --features wallet", "--no-default-features --features crypto", "--all-features"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: clippy
+      - run: cargo clippy ${{ matrix.features }} --all-targets -- -D warnings
+
+  test:
+    name: Test (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["--no-default-features", "--no-default-features --features node", "--no-default-features --features indexer", "--no-default-features --features wallet", "--no-default-features --features crypto", "--all-features"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - run: cargo test ${{ matrix.features }} --locked
+
+  # Cross-platform test gate, mirroring mintlayer-core's build.yml: the full
+  # suite runs on every supported OS with the lockfile held fixed.
+  platform-tests:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Shorten CARGO_HOME on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        # The default path blows past the Windows MAX_PATH limit inside the
+        # mintlayer-core git checkouts (same reason mintlayer-core's own
+        # build.yml does this).
+        run: echo "CARGO_HOME=C:\crg" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - run: cargo build --all-features --locked --examples
+      - run: cargo test --all-features --locked
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  license:
+    name: License headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-license.sh
