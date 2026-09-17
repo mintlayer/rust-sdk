@@ -44,7 +44,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
-      - run: cargo test ${{ matrix.features }}
+      - run: cargo test ${{ matrix.features }} --locked
+
+  # Cross-platform test gate, mirroring mintlayer-core's build.yml: the full
+  # suite runs on every supported OS with the lockfile held fixed.
+  platform-tests:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Shorten CARGO_HOME on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        # The default path blows past the Windows MAX_PATH limit inside the
+        # mintlayer-core git checkouts (same reason mintlayer-core's own
+        # build.yml does this).
+        run: echo "CARGO_HOME=C:\crg" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - run: cargo build --all-features --locked --examples
+      - run: cargo test --all-features --locked
 
   doc:
     name: Documentation
