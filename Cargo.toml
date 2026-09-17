@@ -1,0 +1,112 @@
+[package]
+name = "mintlayer-sdk"
+description = "Rust SDK for the Mintlayer blockchain"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+repository = "https://github.com/mintlayer/rust-sdk"
+homepage = "https://www.mintlayer.org"
+keywords = ["mintlayer", "blockchain", "sdk"]
+categories = ["api-bindings", "cryptography"]
+
+[features]
+default = ["node", "indexer", "wallet"]
+# Shared HTTP/serde machinery for the remote sub-clients.
+http = ["dep:reqwest", "dep:serde", "dep:serde_json"]
+# JSON-RPC client for the node daemon.
+node = ["http"]
+# REST client for the indexer (api-web-server).
+indexer = ["http"]
+# JSON-RPC client for the wallet daemon.
+wallet = ["http"]
+# Native cryptography and transaction building backed by mintlayer-core.
+crypto = [
+  "dep:serde",
+  "dep:serde_json",
+  "dep:ml-common",
+  "dep:ml-consensus",
+  "dep:ml-crypto",
+  "dep:ml-randomness",
+  "dep:ml-serialization",
+  "dep:ml-tx-verifier",
+  "dep:bip39",
+  "dep:zeroize",
+]
+# All sub-clients.
+full = ["node", "indexer", "wallet", "crypto"]
+
+[dependencies]
+serde = { version = "1.0", optional = true, default-features = false, features = [
+  "std",
+  "derive",
+] }
+serde_json = { version = "1.0", optional = true }
+thiserror = "2.0"
+
+# HTTP sub-clients (node / indexer / wallet).
+reqwest = { version = "0.12", optional = true, default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
+
+# Native cryptography (the `crypto` feature).
+bip39 = { version = "2.0", optional = true, default-features = false, features = [
+  "std",
+  "zeroize",
+] }
+zeroize = { version = "1.5", optional = true, default-features = false, features = [
+  "alloc",
+] }
+ml-common = { package = "common", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
+ml-consensus = { package = "consensus", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
+ml-crypto = { package = "crypto", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
+ml-randomness = { package = "randomness", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
+ml-serialization = { package = "serialization", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
+ml-tx-verifier = { package = "tx-verifier", git = "https://github.com/mintlayer/mintlayer-core", rev = "7f4393ac9c07c080661a1bd40e8a6133a98b5155", optional = true }
+
+[[example]]
+name = "send-coins"
+required-features = ["crypto", "indexer"]
+
+[[example]]
+name = "issue-token"
+required-features = ["wallet"]
+
+[[test]]
+name = "client"
+required-features = ["node", "indexer", "wallet", "crypto"]
+
+[[test]]
+name = "node"
+required-features = ["node"]
+
+[[test]]
+name = "indexer"
+required-features = ["indexer"]
+
+[[test]]
+name = "wallet"
+required-features = ["wallet"]
+
+[[test]]
+name = "crypto"
+required-features = ["crypto"]
+
+[dev-dependencies]
+hex = "0.4"
+httpmock = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# Required fix (paritytech/parity-scale-codec#751) not yet released; must match
+# the patch used by mintlayer-core so SCALE encodings stay compatible.
+#
+# NOTE FOR CONSUMERS: Cargo only honors [patch] sections from the *root*
+# workspace manifest. Because this crate depends on unpublished mintlayer-core
+# crates it must itself be consumed via git, which means this patch section is
+# IGNORED in downstream builds. Downstream consumers MUST copy this exact
+# [patch.crates-io] entry into their own workspace root Cargo.toml, or
+# transactions encoded by the `crypto` feature may not match the ones produced
+# by mintlayer-core.
+[patch.crates-io]
+parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec.git", rev = "5021525697edc0661591ebc71392c48d950a10b0" }
