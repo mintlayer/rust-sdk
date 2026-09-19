@@ -69,6 +69,15 @@ macro_rules! define_error {
                 /// The limit that was exceeded.
                 limit: usize,
             },
+            /// The request was delivered, but its outcome could not be
+            /// confirmed: the response was lost, oversized, undecodable, or
+            /// did not carry the matching id. For mutating calls the daemon
+            /// may already have acted; check for side effects before
+            /// retrying.
+            #[error(
+                "request was delivered but its outcome is unknown (the daemon may have acted): {0}"
+            )]
+            OutcomeUnknown(Box<Self>),
         }
 
         impl From<crate::jsonrpc::RequestError> for $name {
@@ -82,6 +91,9 @@ macro_rules! define_error {
                     }
                     crate::jsonrpc::RequestError::ResponseTooLarge { limit } => {
                         Self::ResponseTooLarge { limit }
+                    }
+                    crate::jsonrpc::RequestError::AfterDispatch(inner) => {
+                        Self::OutcomeUnknown(Box::new(Self::from(*inner)))
                     }
                 }
             }
@@ -114,6 +126,13 @@ pub(crate) enum RequestError {
     },
     #[error("daemon response exceeds the maximum accepted size of {limit} bytes")]
     ResponseTooLarge { limit: usize },
+    /// Marks every failure observed after the HTTP request was delivered:
+    /// the daemon may have acted before the response became unreadable, so
+    /// a caller cannot distinguish "the call never happened" from "the
+    /// call may have succeeded". For mutating calls this must be checked
+    /// before a retry.
+    #[error("request was delivered but its outcome is unknown (the daemon may have acted): {0}")]
+    AfterDispatch(Box<RequestError>),
 }
 
 #[derive(Serialize)]
@@ -177,30 +196,57 @@ impl Transport {
         // The HTTP status code is intentionally not inspected: the daemon may
         // answer with a valid JSON-RPC envelope on a non-2xx status (parity
         // with the go-sdk client).
-        let http_response = builder.send().await?;
-        let response: Response = read_json_body(http_response).await?;
+        let http_response = builder.send().await.map_err(|err| {
+            // A failure while establishing the connection cannot have
+            // reached the daemon, so it is a genuine pre-dispatch failure.
+            // Every other send-phase failure (a timeout while waiting for
+            // the response headers, a connection reset mid-write) is
+            // inherently ambiguous: the request may have been fully written
+            // and the daemon may have acted, so it is classified as
+            // outcome-unknown.
+            if err.is_connect() {
+                RequestError::Http(err)
+            } else {
+                RequestError::AfterDispatch(Box::new(RequestError::Http(err)))
+            }
+        })?;
+        // From here on the request has been delivered: any failure means the
+        // daemon may have acted before the response became unreadable, which
+        // callers must be able to distinguish from a pre-dispatch failure.
+        let response: Response = read_json_body(http_response)
+            .await
+            .map_err(|err| RequestError::AfterDispatch(Box::new(err)))?;
         match response.id {
             Some(actual) if actual.as_u64() == Some(id) => {}
             Some(actual) => {
-                return Err(RequestError::IdMismatch {
-                    expected: id,
-                    actual,
-                });
+                return Err(RequestError::AfterDispatch(Box::new(
+                    RequestError::IdMismatch {
+                        expected: id,
+                        actual,
+                    },
+                )));
             }
             None => {
-                return Err(RequestError::IdMismatch {
-                    expected: id,
-                    actual: serde_json::Value::Null,
-                });
+                return Err(RequestError::AfterDispatch(Box::new(
+                    RequestError::IdMismatch {
+                        expected: id,
+                        actual: serde_json::Value::Null,
+                    },
+                )));
             }
         }
+        // An error envelope carrying the matching id is a definitive answer
+        // from the daemon (it refused the request), not an unknown outcome.
+        // The daemon-controlled message is sanitized before it reaches the
+        // public error value.
         if let Some(err) = response.error {
             return Err(RequestError::Rpc {
                 code: err.code,
-                message: err.message,
+                message: crate::limits::sanitize_daemon_text(&err.message),
             });
         }
-        Ok(serde_json::from_value(response.result)?)
+        serde_json::from_value(response.result)
+            .map_err(|err| RequestError::AfterDispatch(Box::new(RequestError::Json(err))))
     }
 }
 

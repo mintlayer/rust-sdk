@@ -10,6 +10,7 @@
 mod common;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::{mock_rpc, respond, rpc_error, rpc_ok};
 use httpmock::prelude::*;
@@ -172,6 +173,84 @@ async fn send_params_wire_shape() {
     assert!(result.fees.tokens.is_empty());
     assert!(result.broadcasted);
     assert_eq!(mock.hits(), 1);
+}
+
+/// A `send` response that fails verification after the request was delivered
+/// (here: an envelope with the wrong id) must surface as `OutcomeUnknown`,
+/// distinct from a pre-dispatch failure, so a retry-on-Err cannot silently
+/// double a fund-moving mutation.
+#[tokio::test]
+async fn send_response_loss_is_outcome_unknown() {
+    let server = MockServer::start();
+    // Valid SendResult payload, but the envelope answers id 999 instead of
+    // the request's id 1: the daemon may already have built and broadcast
+    // the transaction before its response became unverifiable.
+    mock_rpc(
+        &server,
+        "\"jsonrpc\"".to_string(),
+        rpc_ok(999, send_result()),
+    );
+
+    let client = Client::new(server.url("/"));
+    let params = SendParams {
+        account: 0,
+        address: "mtc1qsending".to_string(),
+        amount: Amount::from_atoms(1000),
+        selected_utxos: Vec::new(),
+        options: TxOptions::default(),
+    };
+    match client.send(params).await {
+        Err(Error::OutcomeUnknown(inner)) => match *inner {
+            Error::IdMismatch { expected, actual } => {
+                assert_eq!(expected, 1);
+                assert_eq!(actual, serde_json::Value::from(999));
+            }
+            other => panic!("expected IdMismatch, got: {other:?}"),
+        },
+        other => panic!("expected OutcomeUnknown(IdMismatch), got: {other:?}"),
+    }
+}
+
+/// A timeout while waiting for response headers is outcome-ambiguous: the
+/// request was likely fully written, so the daemon may already have built
+/// and broadcast the transaction. It must therefore surface as
+/// `OutcomeUnknown`, not the plain `Transport` variant.
+#[tokio::test]
+async fn send_phase_timeout_is_outcome_unknown() {
+    // Raw TCP endpoint (no httpmock) that accepts the connection but never
+    // writes a response: the client sends its request, then times out
+    // waiting for response headers.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        // Hold the accepted connection open (never answering) past the
+        // client's 200 ms timeout so the send fails as a read timeout,
+        // not a premature connection close; a lingering thread after the
+        // test ends is harmless.
+        if let Ok((stream, _)) = listener.accept() {
+            std::thread::sleep(Duration::from_millis(1000));
+            drop(stream);
+        }
+    });
+
+    let client = Client::builder(format!("http://127.0.0.1:{port}/"))
+        .timeout(Duration::from_millis(200))
+        .build()
+        .unwrap();
+    let params = SendParams {
+        account: 0,
+        address: "mtc1qsending".to_string(),
+        amount: Amount::from_atoms(1000),
+        selected_utxos: Vec::new(),
+        options: TxOptions::default(),
+    };
+    match client.send(params).await {
+        Err(Error::OutcomeUnknown(inner)) => match *inner {
+            Error::Transport(err) => assert!(err.is_timeout(), "expected a timeout, got {err:?}"),
+            other => panic!("expected Transport, got: {other:?}"),
+        },
+        other => panic!("expected OutcomeUnknown(Transport), got: {other:?}"),
+    }
 }
 
 #[tokio::test]

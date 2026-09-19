@@ -20,9 +20,10 @@ let c = wallet::Client::builder("http://127.0.0.1:3034")
 
 Errors are returned as `wallet::Error` —
 `Error::Rpc { code, message }` for daemon errors, plus `Http`, `Json`,
-`IdMismatch` and `ResponseTooLarge` transport variants. Basic-auth
-credentials are redacted from `Debug` output; response bodies are capped
-at 64 MiB.
+`IdMismatch`, `ResponseTooLarge` and `OutcomeUnknown` transport variants.
+Basic-auth credentials are redacted from `Debug` output; response bodies
+are capped at 64 MiB, and daemon error messages are sanitized (control
+characters stripped, 8 KiB cap) before they reach the error value.
 
 ---
 
@@ -93,6 +94,31 @@ Most send methods take `TxOptions { in_top_x_mb, broadcast_to_mempool }`:
 `in_top_x_mb` targets the top X MB of the mempool for fee estimation;
 `broadcast_to_mempool: Some(false)` builds and signs without broadcasting
 while still returning the transaction hex.
+
+## Response loss
+
+**Never retry a fund-moving call (`send`, `send_token`,
+`sweep_spendable`, `spend_utxo`, `deposit_data`, and the staking, token
+and order mutators) on `Err` without checking the outcome first.** The
+daemon builds, signs and broadcasts the transaction as soon as the
+request arrives — before the response is read. If the response is then
+lost, oversized, undecodable, or carries a mismatched id, the call
+returns `Error::OutcomeUnknown` (wrapping the underlying transport
+error): the daemon may already have broadcast the transaction, while a
+pre-dispatch failure such as a connection refusal surfaces as the plain
+transport variant.
+
+On `OutcomeUnknown`, check `list_pending_transactions` /
+`transaction_get` before re-issuing the request, or use the retry-safe
+flow: `TxOptions { broadcast_to_mempool: Some(false) }` followed by
+`submit_transaction` — resubmitting the same transaction hex converges
+on one transaction, so retries are safe.
+
+A timeout while waiting for the response is inherently ambiguous: the
+request was likely fully written, so the client also classifies it as
+`OutcomeUnknown`. Only failures that never established a connection
+(e.g. connection refused, DNS resolution failure) are known to be
+pre-dispatch and surface as the plain transport variant.
 
 ## Staking
 
