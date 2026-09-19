@@ -12,6 +12,24 @@ use std::time::Duration;
 /// exhaustion from a misconfigured or hostile endpoint.
 pub(crate) const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
+/// Upper bound for the characters kept from daemon-controlled error text
+/// before it is embedded in a public error value.
+pub(crate) const MAX_ERROR_BODY_CHARS: usize = 8 * 1024;
+
+/// Neutralizes daemon-controlled error text before it is embedded in a
+/// public error value: control characters are stripped (defusing forged
+/// multi-line log entries and terminal escape sequences), the length is
+/// capped at [`MAX_ERROR_BODY_CHARS`], and surrounding whitespace is
+/// trimmed.
+pub(crate) fn sanitize_daemon_text(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_ERROR_BODY_CHARS)
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
 /// Default request timeout for the daemon HTTP clients.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 

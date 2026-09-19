@@ -28,6 +28,14 @@ Errors are returned as `node::Error`:
 - `Error::Json(serde_json::Error)` — the response could not be decoded.
 - `Error::IdMismatch { expected, actual }` — response id mismatch.
 - `Error::ResponseTooLarge { limit }` — the 64 MiB cap was exceeded.
+- `Error::OutcomeUnknown(Error)` — the request was delivered but its outcome
+  could not be confirmed (lost, oversized, undecodable or mismatched
+  response; also a timeout while waiting for the response); for mutating
+  calls the daemon may already have acted, so check for side effects before
+  retrying. `IdMismatch`, `Json`, `ResponseTooLarge` and ambiguous
+  transport errors arrive wrapped in this variant; only failures that
+  never established a connection (e.g. connection refused, DNS resolution
+  failure) surface as the plain variant.
 
 ---
 

@@ -118,11 +118,14 @@ async fn missing_response_id_is_rejected() {
 
     let client = Client::new(server.url("/"));
     match client.best_block_height().await {
-        Err(Error::IdMismatch { expected, actual }) => {
-            assert_eq!(expected, 1);
-            assert_eq!(actual, serde_json::Value::Null);
-        }
-        other => panic!("expected IdMismatch, got: {other:?}"),
+        Err(Error::OutcomeUnknown(inner)) => match *inner {
+            Error::IdMismatch { expected, actual } => {
+                assert_eq!(expected, 1);
+                assert_eq!(actual, serde_json::Value::Null);
+            }
+            other => panic!("expected IdMismatch, got: {other:?}"),
+        },
+        other => panic!("expected OutcomeUnknown(IdMismatch), got: {other:?}"),
     }
 }
 
@@ -146,6 +149,64 @@ async fn rpc_error_is_surfaced() {
         other => panic!("expected Error::Rpc, got {other:?}"),
     }
     assert_eq!(display, "RPC error -32601: Method not found");
+}
+
+#[tokio::test]
+async fn rpc_error_message_is_sanitized() {
+    let server = MockServer::start();
+    // A hostile daemon forges a multi-line audit-log entry containing an
+    // ANSI escape sequence and pads it past the 8 KiB cap; the sanitized
+    // message must be a single line, escape-free, and length-capped.
+    let message = "rejected\n2026-09-19T10:00:00Z ERROR audit: wallet drained for \
+                   operator=admin\u{1b}[31mINJECTED\u{1b}[0m"
+        .to_string()
+        + &"x".repeat(9 * 1024);
+    mock_rpc(
+        &server,
+        "\"jsonrpc\"".to_string(),
+        rpc_error(1, -32600, &message),
+    );
+
+    let client = Client::new(server.url("/"));
+    let err = client.best_block_height().await.unwrap_err();
+    let display = err.to_string();
+    match err {
+        Error::Rpc { code, message } => {
+            assert_eq!(code, -32600);
+            // The newline was stripped and the payload preserved, not emptied.
+            assert!(message.starts_with("rejected2026-"));
+        }
+        other => panic!("expected Error::Rpc, got {other:?}"),
+    }
+    // No forged multi-line output.
+    assert_eq!(display.lines().count(), 1);
+    // No terminal escape sequence survived.
+    assert!(!display.contains('\u{1b}'));
+    // 8 KiB message cap plus slack for the "RPC error -32600: " prefix.
+    assert!(display.chars().count() <= 8 * 1024 + 64);
+}
+
+// The result-decode failure happens after the request was delivered, so it must surface as outcome-unknown.
+#[tokio::test]
+async fn undecodable_result_is_outcome_unknown() {
+    let server = MockServer::start();
+    let mock = mock_rpc(
+        &server,
+        "\"jsonrpc\"".to_string(),
+        rpc_ok(1, json!("not-a-number")),
+    );
+
+    let client = Client::new(server.url("/"));
+    match client.best_block_height().await {
+        Err(Error::OutcomeUnknown(inner)) => match *inner {
+            Error::Json(_) => {}
+            other => panic!("expected Json, got: {other:?}"),
+        },
+        other => panic!("expected OutcomeUnknown(Json), got: {other:?}"),
+    }
+    // The mock was hit: the request really was delivered before the decode
+    // failed, which is what makes the outcome unknown.
+    assert_eq!(mock.hits(), 1);
 }
 
 #[tokio::test]
@@ -435,10 +496,13 @@ async fn oversized_responses_are_rejected() {
     });
     let client = Client::new(server.url("/"));
     match client.best_block_height().await {
-        Err(Error::ResponseTooLarge { limit }) => {
-            assert_eq!(limit, 64 * 1024 * 1024);
-        }
-        other => panic!("expected ResponseTooLarge, got: {other:?}"),
+        Err(Error::OutcomeUnknown(inner)) => match *inner {
+            Error::ResponseTooLarge { limit } => {
+                assert_eq!(limit, 64 * 1024 * 1024);
+            }
+            other => panic!("expected ResponseTooLarge, got: {other:?}"),
+        },
+        other => panic!("expected OutcomeUnknown(ResponseTooLarge), got: {other:?}"),
     }
 }
 

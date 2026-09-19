@@ -33,9 +33,6 @@ pub use types::{
 
 use crate::limits::DEFAULT_TIMEOUT;
 
-/// Upper bound for the characters kept from a daemon error body.
-const MAX_ERROR_BODY_CHARS: usize = 8 * 1024;
-
 /// Client for the Mintlayer indexer REST API (api-web-server).
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -106,14 +103,10 @@ impl Client {
         let status = response.status();
         if status.is_client_error() || status.is_server_error() {
             let bytes = Self::read_capped(response).await.unwrap_or_default();
-            let body: String = String::from_utf8_lossy(&bytes)
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(MAX_ERROR_BODY_CHARS)
-                .collect();
+            let body = crate::limits::sanitize_daemon_text(&String::from_utf8_lossy(&bytes));
             return Err(Error::Http {
                 status_code: status.as_u16(),
-                body: body.trim().to_owned(),
+                body,
             });
         }
         let bytes = Self::read_capped(response).await?;
