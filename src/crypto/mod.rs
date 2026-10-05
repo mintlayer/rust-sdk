@@ -111,13 +111,13 @@ pub use common::chain::partially_signed_transaction::OrderAdditionalInfo;
 /// that SDK users do not need a direct dependency on it.
 pub mod types {
     pub use ml_common::chain::signature::inputsig::InputWitness;
+    pub use ml_common::chain::tokens::TokenId;
     pub use ml_common::chain::{
         Destination, OrderId, OutPointSourceId, SignedTransaction, Transaction, TxInput, TxOutput,
         classic_multisig::ClassicMultisigChallenge, htlc::HtlcSecret, output_value::OutputValue,
         stakelock::StakePoolData, timelock::OutputTimeLock,
     };
     pub use ml_common::primitives::H256;
-    pub use ml_common::chain::tokens::TokenId;
     pub use ml_crypto::key::{
         PrivateKey, PublicKey, Signature,
         extended::{ExtendedPrivateKey, ExtendedPublicKey},
@@ -180,7 +180,7 @@ pub(crate) fn chain_config(network: Network) -> &'static ChainConfig {
 }
 
 /// Parses a bech32 address into an addressable chain object, e.g. an
-/// [`OrderId`] or a [`Transaction`](types::Transaction) input's outpoint
+/// [`OrderId`](types::OrderId) or a [`Transaction`](types::Transaction) input's outpoint
 /// source.
 pub fn parse_addressable<T: common::address::traits::Addressable>(
     network: Network,
