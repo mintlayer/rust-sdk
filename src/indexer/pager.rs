@@ -79,7 +79,10 @@ impl<T> Pager<T> {
             return Ok(None);
         }
         self.pending = Vec::new().into_iter();
-        let cursor = self.next_cursor.take();
+        // Cloned, not taken: on a failed fetch the cursor must survive so a
+        // retried call resumes from the same position (see the retry doc
+        // above). The success path overwrites it below anyway.
+        let cursor = self.next_cursor.clone();
         let Page { items, next_cursor } = (self.fetch)(cursor).await?;
         self.done = next_cursor.is_none();
         self.next_cursor = next_cursor;

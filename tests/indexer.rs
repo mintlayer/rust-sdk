@@ -12,6 +12,7 @@ mod common;
 use common::respond;
 use httpmock::prelude::*;
 use serde_json::json;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use mintlayer_sdk::indexer::{
     Amount, Client, Error, HoldersOpts, OffsetMode, OrderBookOpts, OrderBookSide, PageOpts,
@@ -1282,4 +1283,73 @@ async fn unmatched_server_errors_fall_back_to_http() {
         other => panic!("expected Http, got {other:?}"),
     }
     mock.assert();
+}
+
+#[tokio::test]
+async fn pager_retry_after_failed_fetch_resumes_from_same_cursor() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "1")
+            .matches(|request| {
+                let params = request.query_params.as_deref().unwrap_or(&[]);
+                !params.iter().any(|(name, _)| *name == "cursor")
+            });
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qa", "3", "0.00000003")], "next_cursor": "cursor-1"})
+                .to_string(),
+        );
+    });
+
+    // The first request carrying cursor-1 fails; the retry (same request)
+    // succeeds. httpmock's `matches` takes a plain fn pointer (no
+    // captures), so the two identical requests are routed via a static
+    // request counter; httpmock serves the first registered match.
+    static RETRY_HITS: AtomicUsize = AtomicUsize::new(0);
+    let failing = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/statistics/coin/holders").matches(|request| {
+            let params = request.query_params.as_deref().unwrap_or(&[]);
+            if !params.iter().any(|(name, value)| name == "cursor" && value == "cursor-1") {
+                return false;
+            }
+            RETRY_HITS.fetch_add(1, Ordering::SeqCst) == 0
+        });
+        respond(then, 500, json!({"error": "boom"}).to_string());
+    });
+    let succeeding = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/statistics/coin/holders").matches(|request| {
+            let params = request.query_params.as_deref().unwrap_or(&[]);
+            if !params.iter().any(|(name, value)| name == "cursor" && value == "cursor-1") {
+                return false;
+            }
+            RETRY_HITS.load(Ordering::SeqCst) >= 1
+        });
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qb", "4", "0.00000004")], "next_cursor": null}).to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let mut pager = client.coin_holders_pager(1);
+    let mut walked = Vec::new();
+    let mut errors = 0;
+    while let Some(item) = pager.next().await {
+        match item {
+            Ok(h) => walked.push(h.address),
+            Err(_) => errors += 1,
+        }
+    }
+    // The error is surfaced once, then the retry resumes from cursor-1:
+    // "mt1qa" is not re-emitted and the walk still reaches "mt1qb".
+    assert_eq!(errors, 1);
+    assert_eq!(walked, ["mt1qa", "mt1qb"]);
+    assert_eq!(pager.cursor(), None);
+    first.assert_hits(1);
+    failing.assert_hits(1);
+    succeeding.assert_hits(1);
 }

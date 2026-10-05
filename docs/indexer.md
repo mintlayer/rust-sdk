@@ -25,15 +25,15 @@ Errors are returned as `indexer::Error`:
 - `Error::Http { status_code, body }` — any non-2xx response that does not
   match a known server error below; the body is trimmed and stripped of
   control characters.
-- `Error::InvalidCursor` — `400 invalid cursor`: the cursor is malformed or
-  oversized, belongs to a different listing, or was minted for the other
+- `Error::InvalidCursor` — `400 "Invalid cursor"`: the cursor is malformed
+  or oversized, belongs to a different listing, or was minted for the other
   side of an order book.
-- `Error::InvalidNumItems` — `400 invalid num items`: every paginated v2
-  endpoint accepts 1..=100 items.
-- `Error::BadRequest` — `400 bad request`: mutually incompatible query
+- `Error::InvalidNumItems` — `400 "Invalid number of items"`: every
+  paginated v2 endpoint accepts 1..=100 items.
+- `Error::BadRequest` — `400 "Bad request"`: mutually incompatible query
   parameters (a cursor together with `offset_mode`, or a cursor with a
   non-default pools sort).
-- `Error::TokenNotFound` — `404 token not found`.
+- `Error::TokenNotFound` — `404 "Token not found"`.
 - `Error::Transport(reqwest::Error)` — the request failed.
 - `Error::Json(serde_json::Error)` — the response could not be decoded.
 - `Error::InvalidUrl { message }` — a path segment contained characters
@@ -66,9 +66,13 @@ let opts = PageOpts { offset: 20, items: 10 };
 ### Cursor (keyset) pagination
 
 The pools listing, the global transaction listing, both holders listings,
-and the order book also support keyset pagination: every response is the
-envelope `Page<T> { items, next_cursor }`, where `next_cursor` is the
-opaque cursor of the last returned item and is `None` on the last page.
+and the order book also support keyset pagination: with a `cursor` in the
+request the response is the envelope
+`Page<T> { items, next_cursor }`, where `next_cursor` is the opaque cursor
+of the last returned item and is `None` on the last page. Without a cursor
+parameter the pools and transaction listings return a plain array (the
+offset methods), while the holders listings and the order book always
+return the envelope.
 Cursors are minted by the indexer — never construct or mutate one; pass it
 back verbatim. A cursor silently overrides the `offset` page position on
 the server (`items` still applies).

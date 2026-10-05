@@ -119,7 +119,7 @@ impl Client {
 }
 
 /// Builds the pagination query parameters; zero values are omitted.
-pub(crate) fn page_query(offset: u32, items: u32) -> Vec<(&'static str, String)> {
+pub(crate) fn page_query(offset: u64, items: u32) -> Vec<(&'static str, String)> {
     let mut query = Vec::new();
     if offset > 0 {
         query.push(("offset", offset.to_string()));
@@ -132,7 +132,7 @@ pub(crate) fn page_query(offset: u32, items: u32) -> Vec<(&'static str, String)>
 
 /// The largest page size every paginated v2 endpoint accepts (server-side
 /// `MAX_NUM_ITEMS`; larger or zero page sizes are rejected with `400`
-/// invalid num items).
+/// `"Invalid number of items"`).
 pub(crate) const MAX_NUM_ITEMS: u32 = 100;
 
 /// Clamps a caller-supplied page size to the server-accepted 1..=[`MAX_NUM_ITEMS`]

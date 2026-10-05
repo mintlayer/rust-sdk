@@ -84,6 +84,12 @@ impl Client {
     /// which is signalled with `next_cursor: null` (see
     /// [`OrderBook::truncated`]). Note the walk is not a consistent
     /// snapshot of a moving book.
+    ///
+    /// Truncation detail: a truncated page is mapped to a plain end-of-walk
+    /// here, so a pager consumer cannot distinguish a truncated book from a
+    /// fully walked one. When your caller must know (e.g. to warn about an
+    /// incomplete aggregation), call [`Client::order_pair_book`] directly
+    /// and inspect [`OrderBook::truncated`].
     pub fn order_book_pager(
         &self,
         base: &str,

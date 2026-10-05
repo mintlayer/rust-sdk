@@ -385,8 +385,9 @@ pub struct CoinStats {
 /// The indexer defaults to offset 0 and 10 items per page.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PageOpts {
-    /// Number of items to skip.
-    pub offset: u32,
+    /// Number of items to skip; the server accepts the full `u64` range
+    /// (`OffsetMode::Absolute` offsets are global transaction indexes).
+    pub offset: u64,
     /// Number of items to return.
     pub items: u32,
 }
@@ -414,7 +415,7 @@ impl PoolSort {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PoolListOpts {
     /// Number of pools to skip.
-    pub offset: u32,
+    pub offset: u64,
     /// Number of pools to return.
     pub items: u32,
     /// Sort order; defaults to [`PoolSort::ByHeight`] on the server.
@@ -457,7 +458,7 @@ pub struct Holder {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HoldersOpts {
     /// Number of holders to skip (no-cursor walks only).
-    pub offset: u32,
+    pub offset: u64,
     /// Number of holders to return.
     pub items: u32,
     /// Opaque cursor resuming a previous walk.
@@ -560,11 +561,11 @@ pub struct OrderBook {
 /// The indexer defaults to offset 0 and 10 items per page. When `cursor` is
 /// set the server resolves the page position from the cursor and silently
 /// ignores `offset` (`items` still applies). Cursors are side-specific: an
-/// ask-side cursor on a bid walk is rejected with `400 invalid cursor`.
+/// ask-side cursor on a bid walk is rejected with `400 "Invalid cursor"`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrderBookOpts {
     /// Number of levels to skip (no-cursor requests only).
-    pub offset: u32,
+    pub offset: u64,
     /// Number of levels to return.
     pub items: u32,
     /// Opaque cursor resuming a previous walk on the same side.

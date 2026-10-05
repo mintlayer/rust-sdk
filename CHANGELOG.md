@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- indexer: cursor (keyset) pagination for api-server v2
+  (mintlayer-core PR #2130): `Page<T>`, the reusable `Pager` walker
+  (`*_pager` constructors for pools, the global transaction listing, both
+  holders listings and the order book), the `*_paged`/`*_pager` listing
+  methods with explicit cursors, `list_transactions_with_offset_mode`
+  (`OffsetMode::Legacy` / `Absolute`), the holders listings
+  (`coin_holders`, `token_holders`, `Holder`) and the order book
+  (`order_pair_book`, `OrderBook`/`OrderBookLevel`/`OrderBookPrice` with
+  the `truncated` invariant and side-specific cursors).
+- indexer: typed server errors `Error::InvalidCursor`,
+  `Error::InvalidNumItems`, `Error::BadRequest` and `Error::TokenNotFound`,
+  mapped from the api-server error bodies (`{"error": ...}`).
+- `examples/indexer-pagination.rs`: runnable walks for holders, the order
+  book, the global transaction listing and pools.
+
 - `node::Error::OutcomeUnknown` / `wallet::Error::OutcomeUnknown`: the
   request was delivered but its outcome could not be confirmed (lost,
   oversized, undecodable or mismatched response, or a timeout while
@@ -18,6 +33,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Breaking:** indexer `Transaction.block_id`, `Transaction.timestamp`
+  and `Transaction.confirmations` are now `Option<...>`: a pending
+  (mempool) transaction has `null` for all three on the wire, which
+  previously failed to decode; update direct field uses.
 - **Breaking:** post-delivery transport failures surface as
   `OutcomeUnknown(...)` instead of the bare variant, so a retry on `Err`
   can no longer silently double a fund-moving mutation; update matches on
