@@ -70,28 +70,6 @@ not blocking.
 
 const lanes = [
   {
-    key: 'wire-contract',
-    task: `${brief}\n${outputInstruction}
-DIMENSION: wire-contract fidelity. Verify every new/changed SDK request shape
-and response type against the upstream contract above: query parameters and
-their omission rules, the cursor= envelope forcing for pools/transactions, the
-always-envelope holders/book endpoints, the order-book item shape and pair
-handling, Transaction optionality, holders ordering/decimals, statistics docs.
-Files: src/indexer/types.rs, src/indexer/statistics.rs, src/indexer/pool.rs,
-src/indexer/transaction.rs, src/indexer/order.rs, src/indexer/mod.rs.`,
-  },
-  {
-    key: 'async-pager',
-    task: `${brief}\n${outputInstruction}
-DIMENSION: async/state-machine correctness of the pagination layer. Scrutinize
-src/indexer/pager.rs and every *_pager constructor (statistics.rs, pool.rs,
-transaction.rs, order.rs): FnMut closure capture/move semantics, Send bounds,
-cursor propagation and take() logic, done/exhaustion conditions, buffered-item
-semantics when mixing next()/next_page(), retry-after-error behavior, truncated
-book termination, page-size clamping, per-call clones, accidental unbounded
-loops on empty pages.`,
-  },
-  {
     key: 'errors-serde',
     task: `${brief}\n${outputInstruction}
 DIMENSION: error mapping and (de)serialization. Scrutinize src/indexer/error.rs
@@ -112,9 +90,10 @@ examples/indexer-pagination.rs plus their doc comments in src/. Check: each
 required scenario is actually pinned (first page/full walk for pools, holders,
 global transactions; both book sides; truncated book stops; last page null;
 invalid cursor / invalid num items / token-not-found; pending tx null fields;
-offset_mode param; page-size clamp), mocks assert the right query params, the
-documented claims match the code exactly (no overclaiming), and the example
-compiles against the real API surface.`,
+offset_mode param; page-size clamp; retry-resume after a failed fetch;
+start_from rewind of an exhausted pager), mocks assert the right query params,
+the documented claims match the code exactly (no overclaiming), and the
+example compiles against the real API surface.`,
   },
 ];
 
