@@ -103,12 +103,17 @@ pub use common::primitives::Amount;
 /// the sighash commitments fork.
 pub use common::chain::partially_signed_transaction::TxAdditionalInfo;
 
+/// Balances of an order as known at signing time; required for the sighash of
+/// the order's fill, conclude and freeze inputs.
+pub use common::chain::partially_signed_transaction::OrderAdditionalInfo;
+
 /// Key chain and transaction primitives re-exported from mintlayer-core, so
 /// that SDK users do not need a direct dependency on it.
 pub mod types {
     pub use ml_common::chain::signature::inputsig::InputWitness;
+    pub use ml_common::chain::tokens::TokenId;
     pub use ml_common::chain::{
-        Destination, OutPointSourceId, SignedTransaction, Transaction, TxInput, TxOutput,
+        Destination, OrderId, OutPointSourceId, SignedTransaction, Transaction, TxInput, TxOutput,
         classic_multisig::ClassicMultisigChallenge, htlc::HtlcSecret, output_value::OutputValue,
         stakelock::StakePoolData, timelock::OutputTimeLock,
     };
@@ -174,8 +179,10 @@ pub(crate) fn chain_config(network: Network) -> &'static ChainConfig {
     CONFIGS[network as usize].get_or_init(|| Builder::new(ChainType::from(network)).build())
 }
 
-/// Parses a bech32 address into an addressable chain object.
-pub(crate) fn parse_addressable<T: common::address::traits::Addressable>(
+/// Parses a bech32 address into an addressable chain object, e.g. an
+/// [`OrderId`](types::OrderId) or a [`Transaction`](types::Transaction) input's outpoint
+/// source.
+pub fn parse_addressable<T: common::address::traits::Addressable>(
     network: Network,
     address: &str,
 ) -> Result<T, Error> {
