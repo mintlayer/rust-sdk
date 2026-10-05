@@ -200,7 +200,7 @@ carry the block hash.
 | `order(id: &str) -> Result<Order, Error>` | `GET /order/{id}` | |
 | `orders_by_pair(ask, give, opts) -> Result<Vec<Order>, Error>` | `GET /order/pair/{ask}_{give}` | Currencies are the coin ticker (e.g. `ML`) or a bech32 token id |
 | `order_pair_book(base, quote, side, opts) -> Result<OrderBook, Error>` | `GET /order/pair/{base}_{quote}/book` | Aggregated price levels; `side` is required; see `OrderBook` invariants |
-| `order_book_pager(base, quote, side, items) -> Pager<OrderBookLevel>` | | Item-wise cursor walk; stops on a truncated book |
+| `order_book_pager(base, quote, side, items) -> Result<Pager<OrderBookLevel>, Error>` | | Item-wise cursor walk; stops on a truncated book |
 
 ## Statistics and fees
 

@@ -312,6 +312,7 @@ to reach into `crypto`.
 |---|---|
 | [examples/send-coins](examples/send-coins.rs) | Derive key → fetch UTXOs → build, sign and submit a transaction |
 | [examples/issue-token](examples/issue-token.rs) | Issue a fungible token and mint an initial supply via the wallet daemon |
+| [examples/indexer-pagination](examples/indexer-pagination.rs) | Cursor-paginated walks: coin holders, order book (both sides), transactions (cursor and offset_mode), pools |
 
 ```text
 cargo run --example send-coins --features crypto,indexer -- --mnemonic "..." --to mtc1q... --amount 100000000000 --network testnet

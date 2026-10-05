@@ -3,7 +3,7 @@
 const cwd = '/home/erubboli/Work/nullPointerEnjoyer/rust-sdk';
 
 const brief = `
-REVIEW SCOPE: git commit 13e4beb on branch feat/indexer-v2-keyset-pagination in ${cwd}
+REVIEW SCOPE: branch feat/indexer-v2-keyset-pagination, i.e. git diff f18563d..HEAD (commits 13e4beb and fb4b93e) in ${cwd}
 (run: git show 13e4beb --stat; git show 13e4beb -- <file> to read the diff;
 also read full files as needed).
 
@@ -52,7 +52,12 @@ NO new dependencies (Pager is hand-rolled on Pin<Box<dyn Future>>).
 `;
 
 const outputInstruction = `
-Return ONLY a JSON array (no prose, no fences). Each finding:
+CRITICAL OUTPUT RULE: your ENTIRE final message must be exactly one JSON
+array: it must start with '[' and end with ']' and contain nothing else —
+no headings, no prose sections, no fences. If you find no defects, your
+entire message is exactly []. Do NOT write a human-readable review; the
+parent parses your message with JSON.parse.
+Each finding:
 {"severity":"blocking"|"advisory","file":"<path>","claim":"<one line>",
  "detail":"<what is wrong, exact evidence: file:line, wire shape, or repo convention>",
  "fix":"<concrete suggested fix>"}

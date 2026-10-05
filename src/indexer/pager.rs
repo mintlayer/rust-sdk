@@ -73,7 +73,9 @@ impl<T> Pager<T> {
 
     /// Fetches the next page, or `None` once the listing is exhausted.
     /// Any items buffered by [`Pager::next`] but not yet yielded are
-    /// discarded.
+    /// discarded — unless the walk is already exhausted, in which case
+    /// nothing is fetched and nothing is discarded (a later [`Pager::next`]
+    /// still yields the buffered items).
     pub async fn next_page(&mut self) -> Result<Option<Page<T>>, Error> {
         if self.done {
             return Ok(None);
