@@ -473,8 +473,9 @@ pub enum OffsetMode {
     /// happens to be scanned right now (the historical behavior; the server
     /// default).
     Legacy,
-    /// `offset` is a global transaction index: the page starts before the
-    /// transaction with that index, stable across scanner catch-up.
+    /// `offset` is a global transaction index: the page holds the
+    /// transactions immediately preceding that index in the listing
+    /// (global indexes below it), stable across scanner catch-up.
     Absolute,
 }
 

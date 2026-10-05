@@ -57,10 +57,13 @@ impl<T> Pager<T> {
     }
 
     /// Resumes a walk from a cursor obtained earlier (typically persisted
-    /// after a previous [`Pager`] run).
+    /// after a previous [`Pager`] run). Also usable on an exhausted
+    /// [`Pager`]: it rewinds the walk to the given cursor.
     #[must_use]
     pub fn start_from(mut self, cursor: impl Into<String>) -> Self {
         self.next_cursor = Some(cursor.into());
+        self.pending = Vec::new().into_iter();
+        self.done = false;
         self
     }
 

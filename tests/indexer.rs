@@ -845,8 +845,8 @@ async fn coin_holders_cursor_walk() {
             200,
             json!({
                 "items": [
-                    holder("mt1qrich", "9000000000", "90"),
-                    holder("mt1qpoor", "1000000000", "10"),
+                    holder("mt1qrich", "9000000000000", "90"),
+                    holder("mt1qpoor", "1000000000000", "10"),
                 ],
                 "next_cursor": "cursor-1",
             })
@@ -861,7 +861,7 @@ async fn coin_holders_cursor_walk() {
         respond(
             then,
             200,
-            json!({"items": [holder("mt1qmid", "5000000000", "50")], "next_cursor": null})
+            json!({"items": [holder("mt1qmid", "5000000000000", "50")], "next_cursor": null})
                 .to_string(),
         );
     });
@@ -1299,7 +1299,7 @@ async fn pager_retry_after_failed_fetch_resumes_from_same_cursor() {
         respond(
             then,
             200,
-            json!({"items": [holder("mt1qa", "3", "0.00000003")], "next_cursor": "cursor-1"})
+            json!({"items": [holder("mt1qa", "3000000000000", "30")], "next_cursor": "cursor-1"})
                 .to_string(),
         );
     });
@@ -1330,7 +1330,8 @@ async fn pager_retry_after_failed_fetch_resumes_from_same_cursor() {
         respond(
             then,
             200,
-            json!({"items": [holder("mt1qb", "4", "0.00000004")], "next_cursor": null}).to_string(),
+            json!({"items": [holder("mt1qb", "4000000000000", "40")], "next_cursor": null})
+                .to_string(),
         );
     });
 
@@ -1352,4 +1353,53 @@ async fn pager_retry_after_failed_fetch_resumes_from_same_cursor() {
     first.assert_hits(1);
     failing.assert_hits(1);
     succeeding.assert_hits(1);
+}
+
+#[tokio::test]
+async fn pager_start_from_rewinds_an_exhausted_walk() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "1")
+            .matches(|request| {
+                let params = request.query_params.as_deref().unwrap_or(&[]);
+                !params.iter().any(|(name, _)| *name == "cursor")
+            });
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qa", "3000000000000", "30")], "next_cursor": "cursor-1"})
+                .to_string(),
+        );
+    });
+    let second = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("cursor", "cursor-1")
+            .query_param("items", "1");
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qb", "4000000000000", "40")], "next_cursor": null})
+                .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let mut pager = client.coin_holders_pager(1);
+    while let Some(item) = pager.next().await {
+        item.unwrap();
+    }
+    assert_eq!(pager.cursor(), None);
+
+    // start_from on the exhausted pager rewinds it to cursor-1.
+    let mut pager = pager.start_from("cursor-1");
+    assert_eq!(pager.cursor(), Some("cursor-1"));
+    let resumed = pager.next().await.unwrap().unwrap();
+    assert_eq!(resumed.address, "mt1qb");
+    assert!(pager.next().await.is_none());
+
+    first.assert_hits(1);
+    second.assert_hits(2);
 }

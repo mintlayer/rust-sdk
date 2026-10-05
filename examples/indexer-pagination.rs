@@ -5,7 +5,8 @@
 // that can be found in the LICENSE file.
 
 //! Cursor (keyset) pagination against the Mintlayer indexer
-//! (api-server v2). Walks the four paginated listings end to end:
+//! (api-server v2). Demonstrates cursor walks over the four paginated
+//! listings (each bounded to the first few items for brevity):
 //!
 //! 1. the native coin holders,
 //! 2. both sides of an order book,

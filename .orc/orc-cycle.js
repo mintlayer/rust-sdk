@@ -3,7 +3,7 @@
 const cwd = '/home/erubboli/Work/nullPointerEnjoyer/rust-sdk';
 
 const brief = `
-REVIEW SCOPE: branch feat/indexer-v2-keyset-pagination, i.e. git diff f18563d..HEAD (commits 13e4beb and fb4b93e) in ${cwd}
+REVIEW SCOPE: branch feat/indexer-v2-keyset-pagination, i.e. git diff f18563d..HEAD (commits 13e4beb, fb4b93e, a5e9a86) in ${cwd}
 (run: git show 13e4beb --stat; git show 13e4beb -- <file> to read the diff;
 also read full files as needed).
 
