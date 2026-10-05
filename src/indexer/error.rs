@@ -35,4 +35,48 @@ pub enum Error {
         /// The limit that was exceeded.
         limit: usize,
     },
+    /// The indexer rejected a cursor (`400`, body `Invalid cursor`): the
+    /// cursor is malformed or oversized, belongs to a different listing,
+    /// or was minted for the other side of an order book.
+    #[error("invalid cursor")]
+    InvalidCursor,
+    /// The indexer rejected the requested page size (`400`, body `Invalid
+    /// number of items`); every paginated v2 endpoint accepts 1..=100
+    /// items.
+    #[error("invalid number of items (must be 1..=100)")]
+    InvalidNumItems,
+    /// The indexer rejected the query (`400`, body `Bad request`), for
+    /// example mutually incompatible parameters (`cursor` together with
+    /// `offset_mode`, or a cursor with a non-default pools sort).
+    #[error("bad request (incompatible query parameters)")]
+    BadRequest,
+    /// The referenced token does not exist (`404`, body `Token not
+    /// found`).
+    #[error("token not found")]
+    TokenNotFound,
+}
+
+impl Error {
+    /// Maps an indexer error response to a typed error when the
+    /// `{ "error": "<message>" }` body matches a known server message;
+    /// falls back to [`Error::Http`] otherwise.
+    pub(crate) fn from_status_body(status_code: u16, body: &str) -> Error {
+        #[derive(serde::Deserialize)]
+        struct ErrorBody {
+            error: String,
+        }
+        if let Ok(parsed) = serde_json::from_str::<ErrorBody>(body) {
+            match (status_code, parsed.error.as_str()) {
+                (400, "Invalid cursor") => return Error::InvalidCursor,
+                (400, "Invalid number of items") => return Error::InvalidNumItems,
+                (400, "Bad request") => return Error::BadRequest,
+                (404, "Token not found") => return Error::TokenNotFound,
+                _ => {}
+            }
+        }
+        Error::Http {
+            status_code,
+            body: body.to_owned(),
+        }
+    }
 }

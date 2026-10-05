@@ -134,7 +134,7 @@ REST client for `api-web-server`. All paths are relative to `/api/v2/`.
 The indexer API is unauthenticated.
 
 ```rust
-use mintlayer_sdk::indexer::{self, PageOpts, PoolListOpts, PoolSort};
+use mintlayer_sdk::indexer::{self, OrderBookOpts, OrderBookSide, PageOpts, PoolListOpts, PoolSort};
 
 let c = indexer::Client::builder("http://127.0.0.1:3000")
     .timeout(std::time::Duration::from_secs(15))
@@ -159,14 +159,33 @@ let tokens = c.tokens_by_ticker("MYTOKEN", PageOpts { items: 10, ..Default::defa
 // Orders
 let orders = c.list_orders(PageOpts::default()).await?;
 
-// Statistics
+// Order book (api-server v2): aggregated price levels, side required.
+// Cursors are side-specific and a truncated book stops the walk.
+let book = c.order_pair_book("ML", "mmltk1...", OrderBookSide::Ask, OrderBookOpts::default()).await?;
+for level in &book.items {
+    println!("{} @ {}", level.amount.decimal, level.price.decimal);
+}
+
+// Statistics — all four supply counters are always present.
 let stats = c.coin_statistics().await?;
+
+// Cursor pagination: pools, global transactions, holders, order book.
+// The pager follows next_cursor and stops on the last page.
+let mut holders = c.coin_holders_pager(100);
+while let Some(holder) = holders.next().await {
+    let holder = holder?;
+    println!("{}: {}", holder.address, holder.amount.decimal);
+}
 
 // Submit a signed transaction (requires --enable-post-routes)
 let tx_id = c.submit_transaction(&signed_tx_hex).await?;
 ```
 
-Non-2xx responses are returned as `indexer::Error::Http { status_code, body }`.
+Non-2xx responses map to typed errors where the server's message is known
+(`Error::InvalidCursor`, `Error::InvalidNumItems`, `Error::BadRequest`,
+`Error::TokenNotFound`) and fall back to
+`indexer::Error::Http { status_code, body }` otherwise. See
+[docs/indexer.md](docs/indexer.md) for the full cursor-pagination rules.
 
 ## Wallet client (`wallet`)
 

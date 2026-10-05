@@ -137,8 +137,8 @@ pub struct Block {
 /// A transaction as reported by the indexer.
 ///
 /// [`block_id`](#structfield.block_id), [`timestamp`](#structfield.timestamp)
-/// and [`confirmations`](#structfield.confirmations) are empty strings while
-/// the transaction is unconfirmed.
+/// and [`confirmations`](#structfield.confirmations) are `None` while the
+/// transaction is pending (not yet included in a block).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     /// Hex-encoded transaction id.
@@ -147,12 +147,13 @@ pub struct Transaction {
     pub inputs: serde_json::Value,
     /// The transaction outputs.
     pub outputs: serde_json::Value,
-    /// Hex-encoded id of the confirming block, empty when unconfirmed.
-    pub block_id: String,
-    /// Confirmation timestamp, empty when unconfirmed.
-    pub timestamp: String,
-    /// Number of confirmations, empty when unconfirmed.
-    pub confirmations: String,
+    /// Hex-encoded id of the confirming block; `None` for a pending
+    /// (mempool) transaction.
+    pub block_id: Option<String>,
+    /// Confirmation timestamp; `None` while unconfirmed.
+    pub timestamp: Option<String>,
+    /// Number of confirmations; `None` while unconfirmed.
+    pub confirmations: Option<String>,
 }
 
 /// The merkle path of a confirmed transaction.
@@ -418,4 +419,154 @@ pub struct PoolListOpts {
     pub items: u32,
     /// Sort order; defaults to [`PoolSort::ByHeight`] on the server.
     pub sort: Option<PoolSort>,
+}
+
+/// One page of a cursor-paginated listing.
+///
+/// The indexer's cursor envelope is `{ "items": [...], "next_cursor": ... }`:
+/// `next_cursor` is the opaque cursor of the last returned item, and is
+/// `None` once the result set is exhausted. Cursors are minted by the
+/// indexer; pass them back verbatim — the SDK never constructs or mutates
+/// them. See [`crate::indexer::Pager`] for a ready-made walk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Page<T> {
+    /// The items of this page.
+    pub items: Vec<T>,
+    /// Cursor resuming after the last item of this page; `None` on the last
+    /// page.
+    pub next_cursor: Option<String>,
+}
+
+/// One entry of a holders listing (`GET /statistics/coin/holders` or
+/// `GET /statistics/token/{id}/holders`), ordered by balance, largest
+/// first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Holder {
+    /// Bech32 address of the holder.
+    pub address: String,
+    /// The holder's balance, rendered with the coin's or the token's
+    /// decimals.
+    pub amount: Amount,
+}
+
+/// Parameters for the holders listings.
+///
+/// The indexer defaults to offset 0 and 10 items per page. When `cursor` is
+/// set the server resolves the page position from the cursor and silently
+/// ignores `offset` (`items` still applies).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HoldersOpts {
+    /// Number of holders to skip (no-cursor walks only).
+    pub offset: u32,
+    /// Number of holders to return.
+    pub items: u32,
+    /// Opaque cursor resuming a previous walk.
+    pub cursor: Option<String>,
+}
+
+/// Offset semantics of the global transaction listing (`GET /transaction`
+/// without a cursor).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffsetMode {
+    /// `offset` counts transactions from the beginning of the listing as it
+    /// happens to be scanned right now (the historical behavior; the server
+    /// default).
+    Legacy,
+    /// `offset` is a global transaction index: the page starts before the
+    /// transaction with that index, stable across scanner catch-up.
+    Absolute,
+}
+
+impl OffsetMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Absolute => "absolute",
+        }
+    }
+}
+
+/// Side of an order book (`GET /order/pair/{pair}/book`); the server
+/// requires it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderBookSide {
+    /// Orders asking for the base currency (first in the pair) while giving
+    /// the quote currency; levels ordered by ascending price.
+    Ask,
+    /// Orders asking for the quote currency while giving the base currency
+    /// (the reverse); levels ordered by descending price.
+    Bid,
+}
+
+impl OrderBookSide {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Bid => "bid",
+        }
+    }
+}
+
+/// The price of an order book level: quote currency per one base unit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderBookPrice {
+    /// The exact price as a reduced rational number of atoms
+    /// (`"quote atoms/base atoms"`, e.g. `"3/2"`).
+    pub atoms: String,
+    /// The price in currency units, truncated (floored) toward zero; the
+    /// exact value sits alongside in
+    /// [`atoms`](#structfield.atoms).
+    pub decimal: String,
+}
+
+/// One aggregated price level of an order book.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderBookLevel {
+    /// The level price.
+    pub price: OrderBookPrice,
+    /// The remaining base-currency amount resting at this level.
+    pub amount: Amount,
+}
+
+/// The order book of a trading pair.
+///
+/// Invariants (api-server v2):
+/// - `next_cursor` is `None` on the last page.
+/// - When
+///   [`truncated`](#structfield.truncated) is `true` the per-request cap of
+///   10,000 aggregated orders was hit; the server then sends
+///   `next_cursor: null` because the levels in hand are an incomplete
+///   aggregation and the cursor walk cannot be continued. Never treat a
+///   truncated book as complete.
+/// - The book is computed fresh on every request, so a paginated walk is
+///   not a consistent snapshot of a moving book.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderBook {
+    /// The price levels of this page (ascending on the ask side,
+    /// descending on the bid side).
+    pub items: Vec<OrderBookLevel>,
+    /// Cursor resuming after the last level of this page; `None` on the
+    /// last page and whenever [`truncated`](#structfield.truncated) is
+    /// `true`.
+    pub next_cursor: Option<String>,
+    /// `true` when the server-side cap truncated the book; absent means
+    /// `false`.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+/// Parameters for the order book listing.
+///
+/// The indexer defaults to offset 0 and 10 items per page. When `cursor` is
+/// set the server resolves the page position from the cursor and silently
+/// ignores `offset` (`items` still applies). Cursors are side-specific: an
+/// ask-side cursor on a bid walk is rejected with `400 invalid cursor`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OrderBookOpts {
+    /// Number of levels to skip (no-cursor requests only).
+    pub offset: u32,
+    /// Number of levels to return.
+    pub items: u32,
+    /// Opaque cursor resuming a previous walk on the same side.
+    pub cursor: Option<String>,
 }

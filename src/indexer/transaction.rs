@@ -8,7 +8,7 @@
 
 use serde::Deserialize;
 
-use super::{Error, MerklePath, PageOpts, Transaction};
+use super::{Error, MerklePath, OffsetMode, Page, PageOpts, Pager, Transaction};
 use crate::indexer::Client;
 
 impl Client {
@@ -55,5 +55,54 @@ impl Client {
         }
         let response: Response = self.post("/transaction", signed_tx_hex).await?;
         Ok(response.tx_id)
+    }
+
+    /// Lists transactions along the global keyset cursor walk
+    /// (`GET /transaction` with `cursor`), newest block first, in block
+    /// order within each block.
+    ///
+    /// When `cursor` is `None` the walk starts from the beginning. A
+    /// cursor cannot be combined with an `offset_mode` (the server rejects
+    /// the pair with [`Error::BadRequest`]), so this method takes no
+    /// offset; for offset-based listings use [`Client::list_transactions`]
+    /// or [`Client::list_transactions_with_offset_mode`]. A cursor
+    /// silently overrides the `offset` page position on the server, so
+    /// this method takes no offset either.
+    pub async fn list_transactions_paged(
+        &self,
+        cursor: Option<&str>,
+        items: u32,
+    ) -> Result<Page<Transaction>, Error> {
+        let query = [
+            ("cursor", cursor.unwrap_or("").to_owned()),
+            ("items", crate::indexer::clamp_items(items).to_string()),
+        ];
+        self.get("/transaction", &query).await
+    }
+
+    /// Lists transactions with explicit offset semantics and no cursor
+    /// (`GET /transaction` with `offset_mode`). [`OffsetMode::Legacy`] is
+    /// the server default (see [`Client::list_transactions`]);
+    /// [`OffsetMode::Absolute`] treats `offset` as a global transaction
+    /// index, stable across scanner catch-up.
+    pub async fn list_transactions_with_offset_mode(
+        &self,
+        mode: OffsetMode,
+        opts: PageOpts,
+    ) -> Result<Vec<Transaction>, Error> {
+        let mut query = crate::indexer::page_query(opts.offset, opts.items);
+        query.push(("offset_mode", mode.as_str().to_owned()));
+        self.get("/transaction", &query).await
+    }
+
+    /// Walks the global transaction listing page by page, `items`
+    /// transactions per page (clamped to 1..=100).
+    pub fn transactions_pager(&self, items: u32) -> Pager<Transaction> {
+        let items = crate::indexer::clamp_items(items);
+        let client = self.clone();
+        Pager::new(move |cursor| {
+            let client = client.clone();
+            Box::pin(async move { client.list_transactions_paged(cursor.as_deref(), items).await })
+        })
     }
 }

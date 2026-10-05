@@ -13,6 +13,7 @@ mod chain;
 mod delegation;
 mod error;
 mod order;
+mod pager;
 mod pool;
 mod statistics;
 mod token;
@@ -24,11 +25,13 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 
 pub use error::Error;
+pub use pager::{PagedFuture, Pager};
 pub use types::{
     AddressInfo, Amount, Block, BlockBody, BlockHeader, ChainTip, CoinStats, Delegation,
-    DelegationInfo, GenesisInfo, MerklePath, NftInfo, NftMetadata, Order, PageOpts, PerThousand,
-    Pool, PoolDelegation, PoolListOpts, PoolSort, Timestamp, TokenBalance, TokenInfo, TokenTx,
-    Transaction, Uint64, Utxo, UtxoOutpoint,
+    DelegationInfo, GenesisInfo, Holder, HoldersOpts, MerklePath, NftInfo, NftMetadata, OffsetMode,
+    Order, OrderBook, OrderBookLevel, OrderBookOpts, OrderBookPrice, OrderBookSide, Page, PageOpts,
+    PerThousand, Pool, PoolDelegation, PoolListOpts, PoolSort, Timestamp, TokenBalance, TokenInfo,
+    TokenTx, Transaction, Uint64, Utxo, UtxoOutpoint,
 };
 
 use crate::limits::DEFAULT_TIMEOUT;
@@ -104,10 +107,7 @@ impl Client {
         if status.is_client_error() || status.is_server_error() {
             let bytes = Self::read_capped(response).await.unwrap_or_default();
             let body = crate::limits::sanitize_daemon_text(&String::from_utf8_lossy(&bytes));
-            return Err(Error::Http {
-                status_code: status.as_u16(),
-                body,
-            });
+            return Err(Error::from_status_body(status.as_u16(), &body));
         }
         let bytes = Self::read_capped(response).await?;
         Ok(serde_json::from_slice(&bytes)?)
@@ -128,6 +128,18 @@ pub(crate) fn page_query(offset: u32, items: u32) -> Vec<(&'static str, String)>
         query.push(("items", items.to_string()));
     }
     query
+}
+
+/// The largest page size every paginated v2 endpoint accepts (server-side
+/// `MAX_NUM_ITEMS`; larger or zero page sizes are rejected with `400`
+/// invalid num items).
+pub(crate) const MAX_NUM_ITEMS: u32 = 100;
+
+/// Clamps a caller-supplied page size to the server-accepted 1..=[`MAX_NUM_ITEMS`]
+/// range; used by the pager constructors, whose walks must not fail on a
+/// page boundary.
+pub(crate) fn clamp_items(items: u32) -> u32 {
+    items.clamp(1, MAX_NUM_ITEMS)
 }
 
 /// Validates that a caller-supplied path segment cannot alter the request
