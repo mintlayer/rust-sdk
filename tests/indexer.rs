@@ -12,10 +12,11 @@ mod common;
 use common::respond;
 use httpmock::prelude::*;
 use serde_json::json;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use mintlayer_sdk::indexer::{
-    Amount, Client, Error, PageOpts, PerThousand, PoolListOpts, PoolSort, Uint64, Utxo,
-    UtxoOutpoint,
+    Amount, Client, Error, HoldersOpts, OffsetMode, OrderBookOpts, OrderBookSide, PageOpts,
+    PerThousand, PoolListOpts, PoolSort, Uint64, Utxo, UtxoOutpoint,
 };
 
 #[tokio::test]
@@ -359,7 +360,7 @@ async fn utxo_wire_key_is_utxo() {
 }
 
 #[tokio::test]
-async fn unconfirmed_transaction_empty_string_fields() {
+async fn pending_transaction_null_fields() {
     let server = MockServer::start();
     let mock = server.mock(|when, then| {
         when.method(GET).path("/api/v2/transaction/aabb");
@@ -370,9 +371,9 @@ async fn unconfirmed_transaction_empty_string_fields() {
                 "id": "aabb",
                 "inputs": [],
                 "outputs": [],
-                "block_id": "",
-                "timestamp": "",
-                "confirmations": ""
+                "block_id": null,
+                "timestamp": null,
+                "confirmations": null
             })
             .to_string(),
         );
@@ -382,9 +383,9 @@ async fn unconfirmed_transaction_empty_string_fields() {
     let tx = client.transaction("aabb").await.unwrap();
 
     assert_eq!(tx.id, "aabb");
-    assert_eq!(tx.block_id, "");
-    assert_eq!(tx.timestamp, "");
-    assert_eq!(tx.confirmations, "");
+    assert_eq!(tx.block_id, None);
+    assert_eq!(tx.timestamp, None);
+    assert_eq!(tx.confirmations, None);
     mock.assert();
 }
 
@@ -806,4 +807,599 @@ async fn remaining_types_decode() {
     reward_mock.assert();
     genesis_mock.assert();
     all_utxos_mock.assert();
+}
+
+// ---------------------------------------------------------------------------
+// Cursor pagination, holders, and order book (api-server v2, PR #2130)
+// ---------------------------------------------------------------------------
+
+fn holder(address: &str, atoms: &str, decimal: &str) -> serde_json::Value {
+    json!({"address": address, "amount": {"atoms": atoms, "decimal": decimal}})
+}
+
+fn full_pool(pool_id: &str) -> serde_json::Value {
+    json!({
+        "pool_id": pool_id,
+        "decommission_destination": "mtct1x",
+        "staker_balance": {"atoms": "1000", "decimal": "0.00000001"},
+        "margin_ratio_per_thousand": "3.5%",
+        "cost_per_block": {"atoms": "1000", "decimal": "0.00000001"},
+        "vrf_public_key": "vrfpub1x",
+        "delegations_balance": {"atoms": "2000", "decimal": "0.00000002"}
+    })
+}
+
+#[tokio::test]
+async fn coin_holders_cursor_walk() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "2")
+            .matches(|request| {
+                let params = request.query_params.as_deref().unwrap_or(&[]);
+                !params.iter().any(|(name, _)| *name == "cursor")
+            });
+        respond(
+            then,
+            200,
+            json!({
+                "items": [
+                    holder("mt1qrich", "9000000000000", "90"),
+                    holder("mt1qpoor", "1000000000000", "10"),
+                ],
+                "next_cursor": "cursor-1",
+            })
+            .to_string(),
+        );
+    });
+    let second = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("cursor", "cursor-1")
+            .query_param("items", "2");
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qmid", "5000000000000", "50")], "next_cursor": null})
+                .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let mut pager = client.coin_holders_pager(2);
+    let mut walked = Vec::new();
+    while let Some(item) = pager.next().await {
+        walked.push(item.unwrap().address);
+    }
+    assert_eq!(walked, ["mt1qrich", "mt1qpoor", "mt1qmid"]);
+    first.assert();
+    second.assert();
+}
+
+#[tokio::test]
+async fn token_holders_walk_and_last_page() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/token/tok1/holders")
+            .query_param("cursor", "resume");
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qone", "7", "0.00000007")], "next_cursor": null})
+                .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let page = client
+        .token_holders(
+            "tok1",
+            HoldersOpts {
+                offset: 0,
+                items: 0,
+                cursor: Some("resume".to_owned()),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].amount.atoms, 7);
+    assert_eq!(page.next_cursor, None);
+    mock.assert();
+}
+
+#[tokio::test]
+async fn token_holders_unknown_token_is_token_not_found() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/statistics/token/tok1/holders");
+        respond(then, 404, json!({"error": "Token not found"}).to_string());
+    });
+
+    let client = Client::new(server.url(""));
+    let error = client.token_holders("tok1", HoldersOpts::default()).await.unwrap_err();
+    assert!(matches!(error, Error::TokenNotFound), "{error:?}");
+    mock.assert();
+}
+
+#[tokio::test]
+async fn pager_clamps_page_size_to_server_limits() {
+    let server = MockServer::start();
+    let clamped_high = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "100");
+        respond(
+            then,
+            200,
+            json!({"items": [], "next_cursor": null}).to_string(),
+        );
+    });
+    let clamped_low = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "1");
+        respond(
+            then,
+            200,
+            json!({"items": [], "next_cursor": null}).to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    client.coin_holders_pager(250).next().await;
+    client.coin_holders_pager(0).next().await;
+    clamped_high.assert();
+    clamped_low.assert();
+}
+
+#[tokio::test]
+async fn oversized_items_is_invalid_num_items() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "150");
+        respond(
+            then,
+            400,
+            json!({"error": "Invalid number of items"}).to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let error = client
+        .coin_holders(HoldersOpts {
+            offset: 0,
+            items: 150,
+            cursor: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::InvalidNumItems), "{error:?}");
+    mock.assert();
+}
+
+#[tokio::test]
+async fn order_book_decodes_both_sides() {
+    let server = MockServer::start();
+    let ask = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/order/pair/ML_tok1/book")
+            .query_param("side", "ask")
+            .query_param("items", "2");
+        respond(
+            then,
+            200,
+            json!({
+                "items": [
+                    {"price": {"atoms": "3/2", "decimal": "1.5"},
+                     "amount": {"atoms": "200000000", "decimal": "2"}},
+                    {"price": {"atoms": "2/1", "decimal": "2"},
+                     "amount": {"atoms": "100000000", "decimal": "1"}},
+                ],
+                "next_cursor": "ask-cursor",
+            })
+            .to_string(),
+        );
+    });
+    let bid = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/order/pair/ML_tok1/book")
+            .query_param("side", "bid");
+        respond(
+            then,
+            200,
+            json!({
+                "items": [
+                    {"price": {"atoms": "1/3", "decimal": "0.33"},
+                     "amount": {"atoms": "100000000", "decimal": "1"}},
+                ],
+                "next_cursor": "bid-cursor",
+            })
+            .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let ask_book = client
+        .order_pair_book(
+            "ML",
+            "tok1",
+            OrderBookSide::Ask,
+            OrderBookOpts {
+                offset: 0,
+                items: 2,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(!ask_book.truncated);
+    assert_eq!(ask_book.next_cursor.as_deref(), Some("ask-cursor"));
+    assert_eq!(ask_book.items[0].price.atoms, "3/2");
+    assert_eq!(ask_book.items[0].price.decimal, "1.5");
+    assert_eq!(ask_book.items[0].amount.atoms, 200_000_000);
+
+    let bid_book = client
+        .order_pair_book("ML", "tok1", OrderBookSide::Bid, OrderBookOpts::default())
+        .await
+        .unwrap();
+    assert_eq!(bid_book.items[0].price.atoms, "1/3");
+    ask.assert();
+    bid.assert();
+}
+
+#[tokio::test]
+async fn truncated_order_book_stops_the_pager() {
+    let server = MockServer::start();
+    // A truncated book always arrives with `next_cursor: null`; a pager
+    // walk must stop instead of trying to continue.
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/order/pair/ML_tok1/book")
+            .query_param("side", "ask");
+        respond(
+            then,
+            200,
+            json!({
+                "items": [
+                    {"price": {"atoms": "3/2", "decimal": "1.5"},
+                     "amount": {"atoms": "200000000", "decimal": "2"}},
+                ],
+                "next_cursor": null,
+                "truncated": true,
+            })
+            .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let book = client
+        .order_pair_book("ML", "tok1", OrderBookSide::Ask, OrderBookOpts::default())
+        .await
+        .unwrap();
+    assert!(book.truncated);
+    assert_eq!(book.next_cursor, None);
+
+    let mut pager = client.order_book_pager("ML", "tok1", OrderBookSide::Ask, 10).unwrap();
+    let mut levels = 0;
+    while let Some(level) = pager.next().await {
+        level.unwrap();
+        levels += 1;
+    }
+    assert_eq!(levels, 1);
+    mock.assert_hits(2); // one direct fetch, one pager fetch; no continuation
+}
+
+#[tokio::test]
+async fn wrong_side_cursor_is_invalid_cursor() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/order/pair/ML_tok1/book")
+            .query_param("side", "bid")
+            .query_param("cursor", "ask-cursor");
+        respond(then, 400, json!({"error": "Invalid cursor"}).to_string());
+    });
+
+    let client = Client::new(server.url(""));
+    let error = client
+        .order_pair_book(
+            "ML",
+            "tok1",
+            OrderBookSide::Bid,
+            OrderBookOpts {
+                offset: 0,
+                items: 0,
+                cursor: Some("ask-cursor".to_owned()),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::InvalidCursor), "{error:?}");
+    mock.assert();
+}
+
+#[tokio::test]
+async fn pools_cursor_walk() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/pool")
+            .query_param("cursor", "")
+            .query_param("items", "1");
+        respond(
+            then,
+            200,
+            json!({"items": [full_pool("p1")], "next_cursor": "pool-cursor"}).to_string(),
+        );
+    });
+    let second = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/pool").query_param("cursor", "pool-cursor");
+        respond(
+            then,
+            200,
+            json!({"items": [full_pool("p2")], "next_cursor": null}).to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let mut pager = client.pools_pager(1);
+    let mut walked = Vec::new();
+    while let Some(pool) = pager.next().await {
+        walked.push(pool.unwrap().pool_id);
+    }
+    assert_eq!(walked, ["p1", "p2"]);
+    first.assert();
+    second.assert();
+}
+
+#[tokio::test]
+async fn transactions_cursor_walk_with_pending_block_id() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/transaction")
+            .query_param("cursor", "")
+            .query_param("items", "1");
+        respond(
+            then,
+            200,
+            json!({
+                "items": [{
+                    "id": "tx1",
+                    "inputs": [],
+                    "outputs": [],
+                    "block_id": "0000aa",
+                    "timestamp": "1700000000",
+                    "confirmations": "10",
+                    "tx_global_index": 41,
+                }],
+                "next_cursor": "tx-cursor",
+            })
+            .to_string(),
+        );
+    });
+    let second = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/transaction").query_param("cursor", "tx-cursor");
+        respond(
+            then,
+            200,
+            json!({
+                "items": [{
+                    "id": "tx2",
+                    "inputs": [],
+                    "outputs": [],
+                    "block_id": null,
+                    "timestamp": null,
+                    "confirmations": null,
+                }],
+                "next_cursor": null,
+            })
+            .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let mut pager = client.transactions_pager(1);
+    let mut walked = Vec::new();
+    while let Some(tx) = pager.next().await {
+        let tx = tx.unwrap();
+        assert_eq!(tx.block_id.is_none(), tx.id == "tx2");
+        walked.push(tx.id);
+    }
+    assert_eq!(walked, ["tx1", "tx2"]);
+    first.assert();
+    second.assert();
+}
+
+#[tokio::test]
+async fn transactions_offset_mode_is_sent() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/transaction")
+            .query_param("offset_mode", "absolute")
+            .query_param("offset", "5")
+            .query_param("items", "2");
+        respond(then, 200, json!([]).to_string());
+    });
+
+    let client = Client::new(server.url(""));
+    let transactions = client
+        .list_transactions_with_offset_mode(
+            OffsetMode::Absolute,
+            PageOpts {
+                offset: 5,
+                items: 2,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(transactions.is_empty());
+    mock.assert();
+}
+
+#[tokio::test]
+async fn incompatible_parameters_surface_as_bad_request() {
+    let server = MockServer::start();
+    // A cursor combined with a non-default pools sort (or with
+    // `offset_mode`) is rejected server-side; the typed methods cannot
+    // produce that pair, but the mapping must surface the server's verdict
+    // verbatim.
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/pool").query_param("cursor", "pool-cursor");
+        respond(then, 400, json!({"error": "Bad request"}).to_string());
+    });
+
+    let client = Client::new(server.url(""));
+    let error = client.list_pools_paged(Some("pool-cursor"), 10).await.unwrap_err();
+    assert!(matches!(error, Error::BadRequest), "{error:?}");
+    mock.assert();
+}
+
+#[tokio::test]
+async fn unmatched_server_errors_fall_back_to_http() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/statistics/coin/holders");
+        respond(
+            then,
+            500,
+            json!({"error": "Internal server error"}).to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let error = client.coin_holders(HoldersOpts::default()).await.unwrap_err();
+    match error {
+        Error::Http { status_code, body } => {
+            assert_eq!(status_code, 500);
+            assert!(body.contains("Internal server error"), "{body}");
+        }
+        other => panic!("expected Http, got {other:?}"),
+    }
+    mock.assert();
+}
+
+#[tokio::test]
+async fn pager_retry_after_failed_fetch_resumes_from_same_cursor() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "1")
+            .matches(|request| {
+                let params = request.query_params.as_deref().unwrap_or(&[]);
+                !params.iter().any(|(name, _)| *name == "cursor")
+            });
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qa", "3000000000000", "30")], "next_cursor": "cursor-1"})
+                .to_string(),
+        );
+    });
+
+    // The first request carrying cursor-1 fails; the retry (same request)
+    // succeeds. httpmock's `matches` takes a plain fn pointer (no
+    // captures), so the two identical requests are routed via a static
+    // request counter; httpmock serves the first registered match.
+    static RETRY_HITS: AtomicUsize = AtomicUsize::new(0);
+    let failing = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/statistics/coin/holders").matches(|request| {
+            let params = request.query_params.as_deref().unwrap_or(&[]);
+            if !params.iter().any(|(name, value)| name == "cursor" && value == "cursor-1") {
+                return false;
+            }
+            RETRY_HITS.fetch_add(1, Ordering::SeqCst) == 0
+        });
+        respond(then, 500, json!({"error": "boom"}).to_string());
+    });
+    let succeeding = server.mock(|when, then| {
+        when.method(GET).path("/api/v2/statistics/coin/holders").matches(|request| {
+            let params = request.query_params.as_deref().unwrap_or(&[]);
+            if !params.iter().any(|(name, value)| name == "cursor" && value == "cursor-1") {
+                return false;
+            }
+            RETRY_HITS.load(Ordering::SeqCst) >= 1
+        });
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qb", "4000000000000", "40")], "next_cursor": null})
+                .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let mut pager = client.coin_holders_pager(1);
+    let mut walked = Vec::new();
+    let mut errors = 0;
+    while let Some(item) = pager.next().await {
+        match item {
+            Ok(h) => walked.push(h.address),
+            Err(_) => errors += 1,
+        }
+    }
+    // The error is surfaced once, then the retry resumes from cursor-1:
+    // "mt1qa" is not re-emitted and the walk still reaches "mt1qb".
+    assert_eq!(errors, 1);
+    assert_eq!(walked, ["mt1qa", "mt1qb"]);
+    assert_eq!(pager.cursor(), None);
+    first.assert_hits(1);
+    failing.assert_hits(1);
+    succeeding.assert_hits(1);
+}
+
+#[tokio::test]
+async fn pager_start_from_rewinds_an_exhausted_walk() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("items", "1")
+            .matches(|request| {
+                let params = request.query_params.as_deref().unwrap_or(&[]);
+                !params.iter().any(|(name, _)| *name == "cursor")
+            });
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qa", "3000000000000", "30")], "next_cursor": "cursor-1"})
+                .to_string(),
+        );
+    });
+    let second = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v2/statistics/coin/holders")
+            .query_param("cursor", "cursor-1")
+            .query_param("items", "1");
+        respond(
+            then,
+            200,
+            json!({"items": [holder("mt1qb", "4000000000000", "40")], "next_cursor": null})
+                .to_string(),
+        );
+    });
+
+    let client = Client::new(server.url(""));
+    let mut pager = client.coin_holders_pager(1);
+    while let Some(item) = pager.next().await {
+        item.unwrap();
+    }
+    assert_eq!(pager.cursor(), None);
+
+    // start_from on the exhausted pager rewinds it to cursor-1.
+    let mut pager = pager.start_from("cursor-1");
+    assert_eq!(pager.cursor(), Some("cursor-1"));
+    let resumed = pager.next().await.unwrap().unwrap();
+    assert_eq!(resumed.address, "mt1qb");
+    assert!(pager.next().await.is_none());
+
+    first.assert_hits(1);
+    second.assert_hits(2);
 }

@@ -6,7 +6,7 @@
 
 //! Indexer statistics endpoints.
 
-use super::{CoinStats, Error};
+use super::{CoinStats, Error, Holder, HoldersOpts, Page, Pager};
 use crate::indexer::Client;
 
 impl Client {
@@ -31,5 +31,76 @@ impl Client {
             vec![("in_top_x_mb", in_top_x_mb.to_string())]
         };
         self.get("/feerate", &query).await
+    }
+
+    /// Lists the holders of the native coin, largest balance first
+    /// (`GET /statistics/coin/holders`). Amounts are rendered with the
+    /// coin's decimals.
+    pub async fn coin_holders(&self, opts: HoldersOpts) -> Result<Page<Holder>, Error> {
+        let mut query = crate::indexer::page_query(opts.offset, opts.items);
+        if let Some(cursor) = opts.cursor {
+            query.push(("cursor", cursor));
+        }
+        self.get("/statistics/coin/holders", &query).await
+    }
+
+    /// Lists the holders of a token, largest balance first
+    /// (`GET /statistics/token/{token_id}/holders`). Amounts are rendered
+    /// with the token's decimals; an unknown token is rejected with
+    /// [`Error::TokenNotFound`].
+    pub async fn token_holders(
+        &self,
+        token_id: &str,
+        opts: HoldersOpts,
+    ) -> Result<Page<Holder>, Error> {
+        let token_id = super::validate_segment(token_id)?;
+        let mut query = crate::indexer::page_query(opts.offset, opts.items);
+        if let Some(cursor) = opts.cursor {
+            query.push(("cursor", cursor));
+        }
+        self.get(&format!("/statistics/token/{token_id}/holders"), &query).await
+    }
+
+    /// Walks the native coin holders page by page, `items` holders per
+    /// page (clamped to 1..=100).
+    pub fn coin_holders_pager(&self, items: u32) -> Pager<Holder> {
+        let items = crate::indexer::clamp_items(items);
+        let client = self.clone();
+        Pager::new(move |cursor| {
+            let client = client.clone();
+            Box::pin(async move {
+                client
+                    .coin_holders(HoldersOpts {
+                        offset: 0,
+                        items,
+                        cursor,
+                    })
+                    .await
+            })
+        })
+    }
+
+    /// Walks a token's holders page by page, `items` holders per page
+    /// (clamped to 1..=100). The token id is validated up front, so the
+    /// walk itself cannot fail with an invalid URL.
+    pub fn token_holders_pager(&self, token_id: &str, items: u32) -> Result<Pager<Holder>, Error> {
+        let token_id = super::validate_segment(token_id)?.to_owned();
+        let items = crate::indexer::clamp_items(items);
+        let client = self.clone();
+        Ok(Pager::new(move |cursor| {
+            let (client, token_id) = (client.clone(), token_id.clone());
+            Box::pin(async move {
+                client
+                    .token_holders(
+                        &token_id,
+                        HoldersOpts {
+                            offset: 0,
+                            items,
+                            cursor,
+                        },
+                    )
+                    .await
+            })
+        }))
     }
 }

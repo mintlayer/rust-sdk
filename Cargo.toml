@@ -73,6 +73,10 @@ required-features = ["crypto", "indexer"]
 name = "issue-token"
 required-features = ["wallet"]
 
+[[example]]
+name = "indexer-pagination"
+required-features = ["indexer"]
+
 [[test]]
 name = "client"
 required-features = ["node", "indexer", "wallet", "crypto"]
