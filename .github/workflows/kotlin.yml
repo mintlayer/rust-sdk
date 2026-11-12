@@ -61,11 +61,13 @@ jobs:
       - name: Free disk space for the Android SDK and emulator
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
+          # Keep the preinstalled Android SDK (android: true removes it);
+          # free the other heavy toolchains for the emulator instead.
           tool-cache: false
-          android: true
+          android: false
           dotnet: true
           haskell: true
-          large-packages: false
+          large-packages: true
           docker-images: false
           swap-storage: false
 
