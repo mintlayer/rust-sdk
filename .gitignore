@@ -24,3 +24,6 @@ tarpaulin-report.html
 *.p12
 secrets/
 .cargo/credentials
+
+# Developer-local review cycle scripts
+.orc/
