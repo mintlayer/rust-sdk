@@ -45,7 +45,7 @@ class AcceptanceTest {
     fun derivesAddressChainForTestnet() {
         val account = makeDefaultAccountPrivkey(mnemonic, Network.TESTNET, null)
         val xpub = extendedPublicKeyFromExtendedPrivateKey(account)
-        val pubkey = makeReceivingAddressPublicKey(xpub, 0)
+        val pubkey = makeReceivingAddressPublicKey(xpub, 0u)
         assertEquals(
             "00035a6f28253f35e2ff1ab0b086b8c87f731159661157e5be2ca98188369625dc32",
             hex(pubkey),
@@ -58,7 +58,7 @@ class AcceptanceTest {
     fun derivesAddressChainForMainnet() {
         val account = makeDefaultAccountPrivkey(mnemonic, Network.MAINNET, null)
         val xpub = extendedPublicKeyFromExtendedPrivateKey(account)
-        val pubkey = makeReceivingAddressPublicKey(xpub, 0)
+        val pubkey = makeReceivingAddressPublicKey(xpub, 0u)
         val address = pubkeyToPubkeyhashAddress(pubkey, Network.MAINNET)
         assertEquals("mtc1q82twmwwxa3l2pe26gf0zgghu69jtez3qq2ajqyl", address)
     }
@@ -66,7 +66,7 @@ class AcceptanceTest {
     @Test
     fun signsAndVerifiesAMessage() {
         val account = makeDefaultAccountPrivkey(mnemonic, Network.TESTNET, null)
-        val private0 = makeReceivingAddress(account, 0)
+        val private0 = makeReceivingAddress(account, 0u)
         val public0 = publicKeyFromPrivateKey(private0)
         val message = "mintlayer on-device acceptance".toByteArray()
         val signature = signMessageForSpending(private0, message)
