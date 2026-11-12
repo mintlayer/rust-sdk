@@ -25,5 +25,7 @@ tarpaulin-report.html
 secrets/
 .cargo/credentials
 
-# Developer-local review cycle scripts
+# Local development scripts
 .orc/
+bindings/tests/fixtures/
+node_modules/

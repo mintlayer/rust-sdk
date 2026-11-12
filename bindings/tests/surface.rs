@@ -145,8 +145,9 @@ fn decode_unsigned_transaction_is_strict() {
 #[test]
 fn stake_pool_data_requires_vrf_address() {
     // The VRF public key parameter must be an address of the VRF public key
-    // kind; a pubkeyhash address is rejected. The happy path is pinned by
-    // the differential suite with reference fixtures.
+    // kind; a pubkeyhash address is rejected. The happy path is not
+    // exercised by the differential suite (that VRF-address input cannot be
+    // produced from the wasm API); this test pins the rejection behavior.
     let (_, _, _, address) = derived_keys();
     let error = encode_stake_pool_data(
         "1000000000000".to_owned(),

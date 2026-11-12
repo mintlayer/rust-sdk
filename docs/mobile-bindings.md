@@ -141,7 +141,15 @@ The `bindings/tests/parity.rs` test suite pins these vectors byte-for-byte
 (extended private key blob, extended public key blob, receiving public key,
 address, and the normalized `levels || point || chain code` form), together
 with encode/decode roundtrip guarantees and private/public derivation
-agreement at every tested index. CI runs the suite on every pull request.
+agreement at every tested index. The `bindings/tests/differential.rs`
+suite additionally replays a 3,400-case deterministic input set captured
+from the WASM reference through every export except the two VRF-gated
+stake-pool encoders (their VRF-address input is not manufacturable from
+the wasm API; those are pinned structurally) — 101 mnemonics, both
+networks, plus encoder, signing, transaction and intent flows — and
+asserts identical outputs; signature blobs use random nonces, so those
+cases are cross-verified instead. CI runs both suites on every pull
+request.
 
 ## Versioning
 

@@ -22,9 +22,9 @@ path = "src/bin/uniffi-bindgen.rs"
 [dependencies]
 mintlayer-sdk = { path = "..", default-features = false, features = ["crypto"] }
 thiserror = "2.0"
-serde_json = "1.0"
 uniffi = { version = "0.32", features = ["cli"] }
 
 [dev-dependencies]
+serde_json = "1.0"
 mintlayer-sdk = { path = "..", default-features = false, features = ["crypto"] }
 hex = "0.4"

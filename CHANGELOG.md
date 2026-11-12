@@ -17,8 +17,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fees, timelock encodings, token/pool/delegation/order id derivation,
   stake pool helpers and multisig challenges. Blob outputs are
   byte-for-byte identical to `@mintlayer/wasm-lib` 1.4.0; parity is pinned
-  by tests on the public BIP39 test vector. The generated Kotlin package is
-  `org.mintlayer.wallet.bindings`; the Swift module is
+  by tests on the public BIP39 test vector plus a 3,400-case differential
+  suite replaying inputs captured from `@mintlayer/wasm-lib` 1.4.0 through
+  every export except the two VRF-gated stake-pool encoders, which are
+  pinned structurally (CI-generated fixtures). The generated Kotlin
+  package is `org.mintlayer.wallet.bindings`; the Swift module is
   `MintlayerWalletBindings`.
 - indexer: cursor (keyset) pagination for api-server v2
   (mintlayer-core PR #2130): `Page<T>`, the reusable `Pager` walker

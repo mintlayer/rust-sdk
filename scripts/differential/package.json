@@ -1,0 +1,9 @@
+{
+  "name": "mintlayer-bindings-differential",
+  "private": true,
+  "description": "Fixture generator for the wasm-parity differential suite (not published)",
+  "type": "commonjs",
+  "dependencies": {
+    "@mintlayer/wasm-lib": "1.4.0"
+  }
+}
