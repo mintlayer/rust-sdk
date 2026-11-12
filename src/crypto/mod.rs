@@ -118,6 +118,7 @@ pub mod types {
         stakelock::StakePoolData, timelock::OutputTimeLock,
     };
     pub use ml_common::primitives::H256;
+    pub use ml_crypto::key::hdkd::derivable::Derivable;
     pub use ml_crypto::key::{
         PrivateKey, PublicKey, Signature,
         extended::{ExtendedPrivateKey, ExtendedPublicKey},

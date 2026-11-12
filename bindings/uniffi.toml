@@ -1,0 +1,5 @@
+[bindings.kotlin]
+package_name = "org.mintlayer.wallet.bindings"
+
+[bindings.swift]
+module_name = "MintlayerWalletBindings"

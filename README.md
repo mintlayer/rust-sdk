@@ -22,6 +22,7 @@ Requires Rust 1.92+ (edition 2024). Async (tokio + reqwest/rustls). No unsafe co
 
 | Guide | Description |
 |-------|-------------|
+| [docs/mobile-bindings.md](docs/mobile-bindings.md) | Native mobile bindings (Kotlin/Swift): installation, usage, supported platforms |
 | [docs/indexer.md](docs/indexer.md) | Full indexer client reference: chain, blocks, transactions, addresses, pools, tokens, orders, statistics |
 | [docs/node.md](docs/node.md) | Full node client reference: chainstate, mempool, P2P, block submission |
 | [docs/wallet.md](docs/wallet.md) | Full wallet client reference: lifecycle, accounts, balances, transactions, tokens, orders |

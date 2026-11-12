@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- bindings: new `mintlayer-wallet-bindings` crate exposing the wallet key
+  and address primitives to Kotlin and Swift via UniFFI, mirroring the
+  wasm-bindings exports: mnemonic → default account extended private key,
+  receiving/change derivation (private and watch-only public),
+  private-key-to-public-key conversion, extended-public-key derivation,
+  public-key-to-bech32-address encoding, and extended-private-key
+  decode/encode with roundtrip guarantees. Key and address outputs are
+  byte-for-byte identical to `@mintlayer/wasm-lib` 1.4.0; parity is pinned
+  by tests on the public BIP39 test vector. The generated Kotlin package is
+  `org.mintlayer.wallet.bindings`; the Swift module is
+  `MintlayerWalletBindings`.
 - indexer: cursor (keyset) pagination for api-server v2
   (mintlayer-core PR #2130): `Page<T>`, the reusable `Pager` walker
   (`*_pager` constructors for pools, the global transaction listing, both

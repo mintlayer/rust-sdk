@@ -1,0 +1,28 @@
+[package]
+name = "mintlayer-wallet-bindings"
+description = "UniFFI bindings for the Mintlayer wallet primitives (Kotlin and Swift)"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+repository = "https://github.com/mintlayer/rust-sdk"
+homepage = "https://www.mintlayer.org"
+keywords = ["mintlayer", "blockchain", "sdk", "uniffi", "mobile"]
+categories = ["api-bindings"]
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+
+# Helper binary used to generate the Kotlin and Swift foreign-language
+# bindings from the compiled library (never linked into the AAR/XCFramework).
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+mintlayer-sdk = { path = "..", default-features = false, features = ["crypto"] }
+thiserror = "2.0"
+uniffi = { version = "0.32", features = ["cli"] }
+
+[dev-dependencies]
+hex = "0.4"
