@@ -10,14 +10,17 @@ replace the WASM wrappers: React Native's Hermes engine does not provide a
 bindings run everywhere. The WebAssembly route remains available for
 browser use cases and its behavior is unchanged.
 
-The exported surface mirrors the `wasm-bindings` exports operation for
-operation — same function names, same parameter shapes, same runtime blob
-formats — so existing key and address handling ports to the native bindings
-without modification. All outputs are byte-for-byte identical to the WASM
-wrappers; parity is pinned by tests against captured reference outputs of
-`@mintlayer/wasm-lib` 1.4.0 (see "Parity guarantees" below).
+The exported surface mirrors the `wasm-bindings` exports — same function
+names, equivalent parameter shapes, same runtime blob formats — so existing
+key and address handling ports to the native bindings with minimal changes
+(amounts move from JS numbers to decimal atom strings). Blob outputs are
+byte-for-byte identical to the WASM wrappers; parity is pinned by tests
+against captured reference outputs of `@mintlayer/wasm-lib` 1.4.0 (see
+"Parity guarantees" below).
 
 ## API surface
+
+**Keys and addresses**
 
 | Function | Purpose |
 |---|---|
@@ -32,6 +35,42 @@ wrappers; parity is pinned by tests against captured reference outputs of
 | `publicKeyFromPrivateKey(privateKey)` | Public key of a private key |
 | `extendedPublicKeyFromExtendedPrivateKey(accountPrivkey)` | Extended public key of an account key |
 | `pubkeyToPubkeyhashAddress(publicKey, network)` | Public key → bech32 address |
+| `encodeDestination(address, network)` | bech32 address → encoded destination blob |
+
+**Outputs** (each returns one `TxOutput` blob)
+
+`encodeOutputTransfer`, `encodeOutputTokenTransfer`, `encodeOutputLockThenTransfer`, `encodeOutputTokenLockThenTransfer`, `encodeOutputCoinBurn`, `encodeOutputTokenBurn`, `encodeOutputCreateDelegation`, `encodeOutputDelegateStaking`, `encodeOutputCreateStakePool` (takes the blob from `encodeStakePoolData`), `encodeOutputProduceBlockFromStake`, `encodeOutputDataDeposit`, `encodeOutputIssueFungibleToken`, `encodeOutputIssueNft`, `encodeOutputHtlc`, `encodeCreateOrderOutput`
+
+**Inputs** (each returns one `TxInput` blob)
+
+`encodeInputForUtxo`, `encodeInputForWithdrawFromDelegation`, `encodeInputForMintTokens`, `encodeInputForUnmintTokens`, `encodeInputForLockTokenSupply`, `encodeInputForFreezeToken`, `encodeInputForUnfreezeToken`, `encodeInputForChangeTokenAuthority`, `encodeInputForChangeTokenMetadataUri`, `encodeInputForFillOrder`, `encodeInputForFreezeOrder`, `encodeInputForConcludeOrder`
+
+**Transactions**
+
+| Function | Purpose |
+|---|---|
+| `encodeOutpointSourceId(id, source)` | 32-byte id → outpoint source blob (UTXO reference) |
+| `encodeTransaction(inputs, outputs, flags)` | Assemble an unsigned transaction from input/output blobs |
+| `getTransactionId(transaction, strictByteSize)` | Hex transaction id |
+| `decodeTransactionToJson(transaction, network)` | Unsigned transaction → JSON (empty witness list shape) |
+| `decodeSignedTransactionToJson(transaction, network)` | Signed transaction → JSON |
+| `decodePartiallySignedTransactionToJson(transaction, network)` | Partially signed transaction → JSON |
+| `encodeSignedTransaction(transaction, signatures)` | Transaction + witness blobs → signed transaction blob |
+| `encodePartiallySignedTransaction(...)` | Assemble a partially signed transaction (per-input optional witnesses, UTXOs, destinations, HTLC secrets) |
+| `estimateTransactionSize(inputs, inputDestinations, outputs, network)` | Encoded size in bytes |
+| `extractHtlcSecret(signedTx, strictByteSize, htlcOutpointSourceId, htlcOutputIndex)` | Revealed HTLC pre-image from a spend |
+
+**Signing and witnesses**
+
+`encodeWitness`, `encodeWitnessNoSignature`, `encodeWitnessHtlcSpend`, `encodeWitnessHtlcRefundSingleSig`, `encodeWitnessHtlcRefundMultisig`, `signMessageForSpending`, `verifySignatureForSpending`, `signChallenge`, `verifyChallenge`
+
+**Intents**
+
+`makeTransactionIntentMessageToSign`, `encodeSignedTransactionIntent`, `verifyTransactionIntent`
+
+**Fees, locks, ids, staking, multisig**
+
+`fungibleTokenIssuanceFee`, `nftIssuanceFee`, `tokenSupplyChangeFee`, `tokenFreezeFee`, `tokenChangeAuthorityFee`, `dataDepositFee`, `encodeLockForBlockCount`, `encodeLockForSeconds`, `encodeLockUntilTime`, `encodeLockUntilHeight`, `getTokenId`, `getOrderId`, `getDelegationId`, `getPoolId`, `encodeStakePoolData`, `effectivePoolBalance`, `stakingPoolSpendMaturityBlockCount`, `encodeMultisigChallenge`, `multisigChallengeToAddress`
 
 Every fallible function returns a typed error (`BindingsException` in
 Kotlin, `BindingsError` in Swift); nothing panics across the FFI boundary.
@@ -40,10 +79,13 @@ is a pure cryptography and encoding primitive.
 
 ## Data formats
 
-- Extended private keys, extended public keys, plain private keys and
-  public keys cross the boundary as byte arrays in the runtime SCALE
-  format — the same bytes the WASM wrappers produce and consume.
-- Addresses are bech32 strings (`mtc1…` mainnet, `tmt1…` testnet).
+- Extended private keys, extended public keys, plain private keys,
+  public keys, inputs, outputs, witnesses, timelocks and transactions
+  cross the boundary as byte arrays in the runtime SCALE format — the same
+  bytes the WASM wrappers produce and consume.
+- Addresses and token/pool/delegation/order ids are bech32 strings.
+- Amounts are decimal atom strings (1 ML = 100,000,000,000 atoms), since
+  128-bit atom counts do not fit into `Long`/`Int`.
 - `Network` is `mainnet` / `testnet` / `regtest` / `signet`.
 
 ## Kotlin (Android)
@@ -99,8 +141,7 @@ The `bindings/tests/parity.rs` test suite pins these vectors byte-for-byte
 (extended private key blob, extended public key blob, receiving public key,
 address, and the normalized `levels || point || chain code` form), together
 with encode/decode roundtrip guarantees and private/public derivation
-agreement at every tested index. CI runs the suite on every pull request
-and re-verifies parity against the WASM reference on a fixed input set.
+agreement at every tested index. CI runs the suite on every pull request.
 
 ## Versioning
 

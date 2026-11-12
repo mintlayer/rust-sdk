@@ -142,6 +142,12 @@ pub enum BindingsError {
     /// The transaction intent message is not valid UTF-8.
     #[error("transaction intent message is not a valid UTF-8 string")]
     IntentMessageNotUtf8,
+    /// An amount string could not be parsed as a 128-bit atom count.
+    #[error("invalid amount: {message}")]
+    InvalidAmount {
+        /// The rejected value.
+        message: String,
+    },
     /// The transaction id is not a valid hex string.
     #[error("invalid transaction id: {message}")]
     InvalidTransactionId {
@@ -162,6 +168,42 @@ pub enum BindingsError {
     },
 }
 
+/// Maximum length of caller-supplied strings echoed in error payloads, so
+/// oversized garbage cannot inflate host-side logs and crash reports.
+fn clamp(value: String) -> String {
+    const MAX: usize = 512;
+    // Control characters (including newlines and ANSI escapes), the bidi
+    // and format marks used for visual spoofing, and the Unicode line
+    // separators are dropped so echoed garbage cannot forge or spoof
+    // host-side log entries.
+    const SPOOFING: [char; 22] = [
+        '\u{00AD}', '\u{061C}', '\u{180E}', '\u{200B}', '\u{200C}', '\u{200D}', '\u{200E}',
+        '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2060}',
+        '\u{2061}', '\u{2062}', '\u{2063}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
+        '\u{FEFF}',
+    ];
+    let sanitized: String = value
+        .chars()
+        .filter(|c| {
+            !c.is_control()
+                && !SPOOFING.contains(c)
+                && !('\u{E0000}'..='\u{E007F}').contains(c)
+                && *c != '\u{2028}'
+                && *c != '\u{2029}'
+        })
+        .collect();
+    if sanitized.len() <= MAX {
+        return sanitized;
+    }
+    // Truncate on a char boundary: byte 512 may fall inside a multi-byte
+    // character, and slicing there would panic on attacker-controlled input.
+    let mut end = MAX;
+    while !sanitized.is_char_boundary(end) {
+        end -= 1;
+    }
+    sanitized[..end].to_owned()
+}
+
 impl From<crypto::Error> for BindingsError {
     fn from(error: crypto::Error) -> Self {
         match error {
@@ -171,9 +213,10 @@ impl From<crypto::Error> for BindingsError {
             crypto::Error::Decoding(e) => Self::Decoding {
                 message: e.to_string(),
             },
-            crypto::Error::AddressParse { address, message } => {
-                Self::AddressParse { address, message }
-            }
+            crypto::Error::AddressParse { address, message } => Self::AddressParse {
+                address: clamp(address),
+                message,
+            },
             crypto::Error::InvalidKeyIndex => Self::InvalidKeyIndex,
             crypto::Error::FixedTotalSupplyWithoutAmount => Self::FixedTotalSupplyWithoutAmount,
             crypto::Error::InvalidMarginRatio(ratio) => Self::InvalidMarginRatio { ratio },
@@ -208,7 +251,9 @@ impl From<crypto::Error> for BindingsError {
             crypto::Error::EffectiveBalance(message) => Self::EffectiveBalance { message },
             crypto::Error::OrdersV1NotActivated => Self::OrdersV1NotActivated,
             crypto::Error::IntentMessageNotUtf8 => Self::IntentMessageNotUtf8,
-            crypto::Error::InvalidTransactionId(message) => Self::InvalidTransactionId { message },
+            crypto::Error::InvalidTransactionId(message) => Self::InvalidTransactionId {
+                message: clamp(message),
+            },
             crypto::Error::IntentVerification(message) => Self::IntentVerification { message },
             crypto::Error::Json(message) => Self::Json { message },
         }

@@ -197,11 +197,12 @@ and `ConcludeOrder` input of the transaction, not just the one signed.
 
 `crypto::types` re-exports mintlayer-core primitives so consumers do not
 need a direct dependency: `Transaction`, `SignedTransaction`, `TxInput`,
-`TxOutput`, `Destination`, `OutputValue`, `OutPointSourceId`,
-`InputWitness`, `StakePoolData`, `OutputTimeLock`, `HtlcSecret`,
+`TxOutput`, `Destination`, `OutputValue`, `OutPointSourceId`, `PoolId`,
+`OrderId`, `InputWitness`, `StakePoolData`, `OutputTimeLock`, `HtlcSecret`,
 `ClassicMultisigChallenge`, `H256`, `PrivateKey`, `PublicKey`,
-`Signature`, `ExtendedPrivateKey`, `ExtendedPublicKey`, and the SCALE
-`Encode`/`DecodeAll` traits. Also at the module root: `SigHashType`,
-`TokenTotalSupply` (`Fixed(Amount)`, `Lockable`, `Unlimited`),
-`IsTokenFreezable`/`IsTokenUnfreezable` (`Yes`/`No`), `Amount`,
-`TxAdditionalInfo`, and `SourceId`.
+`Signature`, `ExtendedPrivateKey`, `ExtendedPublicKey`, the SCALE
+`Encode`/`DecodeAll`/`Decode` traits, and the `Derivable` derivation
+trait. Also at the module root: `SigHashType`, `TokenTotalSupply`
+(`Fixed(Amount)`, `Lockable`, `Unlimited`), `IsTokenFreezable`/
+`IsTokenUnfreezable` (`Yes`/`No`), `Amount`, `TxAdditionalInfo`,
+`PoolAdditionalInfo`, `OrderAdditionalInfo`, and `SourceId`.

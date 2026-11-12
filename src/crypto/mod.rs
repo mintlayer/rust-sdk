@@ -87,9 +87,9 @@ pub use timelocks::{
 };
 pub use transactions::{
     decode_partially_signed_transaction_to_json, decode_signed_transaction_to_json,
-    decode_transaction, decode_transaction_lenient, encode_outpoint_source_id,
-    encode_partially_signed_transaction, encode_signed_transaction, encode_transaction,
-    estimate_transaction_size, extract_htlc_secret, transaction_id,
+    decode_transaction, decode_transaction_lenient, decode_unsigned_transaction_to_json,
+    encode_outpoint_source_id, encode_partially_signed_transaction, encode_signed_transaction,
+    encode_transaction, estimate_transaction_size, extract_htlc_secret, transaction_id,
 };
 
 pub use common::chain::signature::sighash::sighashtype::SigHashType;
@@ -101,7 +101,7 @@ pub use common::primitives::Amount;
 
 /// Additional per-input information required for sighash calculation after
 /// the sighash commitments fork.
-pub use common::chain::partially_signed_transaction::TxAdditionalInfo;
+pub use common::chain::partially_signed_transaction::{PoolAdditionalInfo, TxAdditionalInfo};
 
 /// Balances of an order as known at signing time; required for the sighash of
 /// the order's fill, conclude and freeze inputs.
@@ -113,9 +113,9 @@ pub mod types {
     pub use ml_common::chain::signature::inputsig::InputWitness;
     pub use ml_common::chain::tokens::TokenId;
     pub use ml_common::chain::{
-        Destination, OrderId, OutPointSourceId, SignedTransaction, Transaction, TxInput, TxOutput,
-        classic_multisig::ClassicMultisigChallenge, htlc::HtlcSecret, output_value::OutputValue,
-        stakelock::StakePoolData, timelock::OutputTimeLock,
+        Destination, OrderId, OutPointSourceId, PoolId, SignedTransaction, Transaction, TxInput,
+        TxOutput, classic_multisig::ClassicMultisigChallenge, htlc::HtlcSecret,
+        output_value::OutputValue, stakelock::StakePoolData, timelock::OutputTimeLock,
     };
     pub use ml_common::primitives::H256;
     pub use ml_crypto::key::hdkd::derivable::Derivable;
@@ -123,7 +123,7 @@ pub mod types {
         PrivateKey, PublicKey, Signature,
         extended::{ExtendedPrivateKey, ExtendedPublicKey},
     };
-    pub use ml_serialization::{DecodeAll, Encode};
+    pub use ml_serialization::{Decode, DecodeAll, Encode};
 }
 
 use common::chain::config::{Builder, ChainConfig, ChainType};
