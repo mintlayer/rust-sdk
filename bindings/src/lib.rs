@@ -7,8 +7,8 @@
 //! UniFFI bindings exposing the Mintlayer wallet primitives to Kotlin and
 //! Swift.
 //!
-//! The exported surface mirrors the `wasm-bindings` exports operation for
-//! operation (same names, same parameter shapes, same runtime blob formats),
+//! The exported surface mirrors the `wasm-bindings` exports
+//! (same names, same parameter shapes, same runtime blob formats),
 //! so a consumer that used the WASM wrappers can move to the native bindings
 //! without changing its key/address handling. Keys and encoded objects cross
 //! the FFI boundary as byte arrays in the runtime SCALE format; addresses and
@@ -17,6 +17,15 @@
 //! All fallible operations return [`BindingsError`] — nothing panics across
 //! the FFI boundary. There is no I/O, no storage and no networking here:
 //! this is a pure cryptography and encoding library.
+//!
+//! # Secret material lifetime
+//!
+//! The BIP39 seed and passphrase are zeroized on drop, but the key blobs
+//! returned over the FFI boundary are plain buffers that the foreign
+//! runtime copies into its own memory; they cannot be zeroized from the
+//! Rust side once returned (the WASM wrappers carry the same caveat).
+//! Keep the lifetime of secret blobs short on the foreign side and never
+//! log them.
 
 pub mod addresses;
 pub mod error;

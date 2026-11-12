@@ -25,8 +25,8 @@ wrappers; parity is pinned by tests against captured reference outputs of
 | `makeDefaultAccountPrivkey(mnemonic, network, passphrase?)` | BIP39 mnemonic → default account extended private key (`m/44'/<coin type>/0'`) |
 | `extendedPrivateKeyDecode(blob)` | Extended private key blob → structured parts |
 | `extendedPrivateKeyEncode(parts)` | Structured parts → canonical extended private key blob |
-| `makeReceivingAddress(accountPrivkey, keyIndex)` | Derive receiving private key (`<account>/0/<index>`) |
-| `makeChangeAddress(accountPrivkey, keyIndex)` | Derive change private key (`<account>/1/<index>`) |
+| `makeReceivingAddress(accountPrivkey, keyIndex)` | Derive receiving private key (`<account>/0/<index>`); returns a plain private-key blob, not an address |
+| `makeChangeAddress(accountPrivkey, keyIndex)` | Derive change private key (`<account>/1/<index>`); returns a plain private-key blob, not an address |
 | `makeReceivingAddressPublicKey(accountPublicKey, keyIndex)` | Watch-only receiving public key derivation |
 | `makeChangeAddressPublicKey(accountPublicKey, keyIndex)` | Watch-only change public key derivation |
 | `publicKeyFromPrivateKey(privateKey)` | Public key of a private key |

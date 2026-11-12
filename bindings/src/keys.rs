@@ -5,7 +5,7 @@
 // that can be found in the LICENSE file.
 
 //! Key generation and BIP32-style derivation, mirroring the wasm-bindings
-//! exports operation for operation.
+//! exports.
 //!
 //! Keys cross the FFI boundary as byte arrays in the runtime SCALE format
 //! (the same bytes the WASM wrappers produce and consume), so outputs are
@@ -28,7 +28,7 @@ use super::network::Network;
 /// and friends. [`extended_private_key_encode`] rebuilds the canonical
 /// extended-key blob from these parts; the pair is covered by roundtrip
 /// tests.
-#[derive(uniffi::Record)]
+#[derive(Clone, uniffi::Record)]
 pub struct ExtendedPrivateKeyData {
     /// The absolute derivation path levels, in encoded form.
     pub derivation_path: Vec<u32>,
@@ -99,12 +99,20 @@ pub fn extended_private_key_encode(key: ExtendedPrivateKeyData) -> Result<Vec<u8
             message: "chain code must be exactly 32 bytes".to_owned(),
         });
     }
-    if key.derivation_path.is_empty() || key.derivation_path.len() > u8::MAX as usize {
+    // An empty path is valid: it is a master key in the runtime format
+    // (holder byte, zero path levels, chain code, scalar).
+    if key.derivation_path.len() > u8::MAX as usize {
         return Err(BindingsError::Decoding {
             message: "derivation path length out of range".to_owned(),
         });
     }
 
+    // Assemble the runtime blob: holder byte, one-byte path size,
+    // big-endian path levels, chain code, scalar. The layout is not assumed
+    // on trust: the assembled bytes are parsed by mintlayer-core's own
+    // decoder below, the decoded key is cross-checked field-by-field against
+    // this record before anything is returned, and the parity tests pin the
+    // same chain against captured reference outputs of the WASM bindings.
     let mut bytes = Vec::with_capacity(2 + key.derivation_path.len() * 4 + 32 + 32);
     bytes.push(0x00); // ExtendedPrivateKeyHolder::Secp256k1Schnorr
     bytes.push(key.derivation_path.len() as u8);
@@ -117,12 +125,18 @@ pub fn extended_private_key_encode(key: ExtendedPrivateKeyData) -> Result<Vec<u8
     let decoded = ExtendedPrivateKey::decode_all(&mut &bytes[..]).map_err(decoding)?;
     let canonical = decoded.encode();
     // The reassembled blob must decode to exactly the parts it was built
-    // from; anything else is a corrupted record.
-    let redecoded = extended_private_key_decode(canonical.clone())?;
-    if redecoded.derivation_path != key.derivation_path
-        || redecoded.chain_code != key.chain_code
-        || redecoded.public_key != key.public_key
-        || redecoded.private_key != key.private_key
+    // from; anything else is a corrupted record. The public-key comparison
+    // binds the scalar (secp256k1 keys are determined by their public
+    // key), so the secret scalar itself is never copied for comparison.
+    let path_matches = Derivable::get_derivation_path(&decoded)
+        .as_slice()
+        .iter()
+        .map(|level| (*level).into_encoded_index())
+        .eq(key.derivation_path.iter().copied());
+    let (public_key, chain_code) = decoded.to_public_key().into_public_key_and_chain_code();
+    if !path_matches
+        || chain_code.into_array().as_slice() != key.chain_code.as_slice()
+        || public_key.encode() != key.public_key
     {
         return Err(BindingsError::Decoding {
             message: "extended private key parts are inconsistent".to_owned(),

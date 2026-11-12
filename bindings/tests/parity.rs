@@ -266,13 +266,75 @@ fn decoded_plain_private_key_key_is_self_consistent() {
             from_plain, decoded.public_key,
             "{name}: plain private key does not match record public key"
         );
-        let _ = ExtendedPrivateKeyData {
+        // The reconstructed record must roundtrip back to the same blob.
+        let reconstructed = ExtendedPrivateKeyData {
             derivation_path: decoded.derivation_path,
             chain_code: decoded.chain_code,
             public_key: decoded.public_key,
             private_key: decoded.private_key,
         };
+        let reencoded =
+            extended_private_key_encode(reconstructed).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(
+            hex_str(&reencoded),
+            xpriv,
+            "{name}: record roundtrip mismatch"
+        );
     }
+}
+
+#[test]
+fn extended_private_key_encode_path_length_boundaries() {
+    // The runtime format stores the path length in one byte (maximum 255
+    // levels). A maximum-length path must roundtrip; one level more must be
+    // rejected rather than truncated.
+    let decoded = extended_private_key_decode(hex_bytes(XPRIV[0].1)).expect("decode must succeed");
+    let make_record = |levels: Vec<u32>| ExtendedPrivateKeyData {
+        derivation_path: levels,
+        chain_code: decoded.chain_code.clone(),
+        public_key: decoded.public_key.clone(),
+        private_key: decoded.private_key.clone(),
+    };
+
+    let max_levels: Vec<u32> = (0..255u32).collect();
+    let blob = extended_private_key_encode(make_record(max_levels.clone()))
+        .unwrap_or_else(|e| panic!("255-level path must encode: {e}"));
+    let redecoded = extended_private_key_decode(blob).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(redecoded.derivation_path.len(), 255);
+    assert_eq!(redecoded.derivation_path, max_levels);
+
+    let mut over_levels = max_levels;
+    over_levels.push(256);
+    let error = extended_private_key_encode(make_record(over_levels))
+        .expect_err("256-level path must be rejected");
+    assert!(
+        matches!(
+            error,
+            mintlayer_wallet_bindings::BindingsError::Decoding { .. }
+        ),
+        "expected a decoding error, got {error:?}"
+    );
+}
+
+#[test]
+fn master_key_empty_path_roundtrip() {
+    // Master keys carry no derivation path levels in the runtime format; a
+    // self-consistent master-key record must encode and decode unchanged.
+    let decoded = extended_private_key_decode(hex_bytes(XPRIV[0].1)).expect("decode must succeed");
+    let master = ExtendedPrivateKeyData {
+        derivation_path: Vec::new(),
+        chain_code: decoded.chain_code.clone(),
+        public_key: public_key_from_private_key(decoded.private_key.clone())
+            .expect("public key derivation must succeed"),
+        private_key: decoded.private_key.clone(),
+    };
+    let blob = extended_private_key_encode(master.clone())
+        .unwrap_or_else(|e| panic!("master-key record must encode: {e}"));
+    let redecoded = extended_private_key_decode(blob).unwrap_or_else(|e| panic!("{e}"));
+    assert!(redecoded.derivation_path.is_empty());
+    assert_eq!(redecoded.chain_code, master.chain_code);
+    assert_eq!(redecoded.public_key, master.public_key);
+    assert_eq!(redecoded.private_key, master.private_key);
 }
 
 #[test]
