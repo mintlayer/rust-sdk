@@ -96,14 +96,14 @@ pub fn extended_private_key_encode(key: ExtendedPrivateKeyData) -> Result<Vec<u8
     let scalar = scalar_from_plain_private_key(&key.private_key)?;
     if key.chain_code.len() != 32 {
         return Err(BindingsError::Decoding {
-            message: "chain code must be exactly 32 bytes".to_owned(),
+            detail: "chain code must be exactly 32 bytes".to_owned(),
         });
     }
     // An empty path is valid: it is a master key in the runtime format
     // (holder byte, zero path levels, chain code, scalar).
     if key.derivation_path.len() > u8::MAX as usize {
         return Err(BindingsError::Decoding {
-            message: "extended private key record: derivation path length out of range".to_owned(),
+            detail: "extended private key record: derivation path length out of range".to_owned(),
         });
     }
 
@@ -139,7 +139,7 @@ pub fn extended_private_key_encode(key: ExtendedPrivateKeyData) -> Result<Vec<u8
         || public_key.encode() != key.public_key
     {
         return Err(BindingsError::Decoding {
-            message: "extended private key parts are inconsistent".to_owned(),
+            detail: "extended private key parts are inconsistent".to_owned(),
         });
     }
     Ok(canonical)
@@ -219,7 +219,7 @@ fn scalar_from_plain_private_key(blob: &[u8]) -> Result<&[u8], BindingsError> {
         // [holder 0x00][32-byte scalar]
         [0x00, scalar @ ..] if scalar.len() == 32 => Ok(scalar),
         _ => Err(BindingsError::Decoding {
-            message: "unsupported plain private key blob layout".to_owned(),
+            detail: "unsupported plain private key blob layout".to_owned(),
         }),
     }
 }

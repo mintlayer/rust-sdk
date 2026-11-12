@@ -15,24 +15,24 @@ use mintlayer_sdk::crypto;
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum BindingsError {
     /// The BIP39 mnemonic could not be parsed.
-    #[error("invalid mnemonic: {message}")]
+    #[error("invalid mnemonic: {detail}")]
     InvalidMnemonic {
         /// Why the mnemonic is invalid.
-        message: String,
+        detail: String,
     },
     /// A runtime-format blob could not be decoded.
-    #[error("decoding failed: {message}")]
+    #[error("decoding failed: {detail}")]
     Decoding {
         /// Why decoding failed.
-        message: String,
+        detail: String,
     },
     /// A bech32 address could not be parsed for the given network.
-    #[error("failed to parse address `{address}`: {message}")]
+    #[error("failed to parse address `{address}`: {detail}")]
     AddressParse {
         /// The offending address.
         address: String,
         /// Why the address is invalid.
-        message: String,
+        detail: String,
     },
     /// A key index has its most significant bit set, which is not allowed.
     #[error("key index must not have the most significant bit set")]
@@ -50,70 +50,70 @@ pub enum BindingsError {
     #[error("multisig requires at least one signature")]
     ZeroMultisigRequiredSignatures,
     /// The NFT creator field is not a valid public key.
-    #[error("invalid NFT creator public key: {message}")]
+    #[error("invalid NFT creator public key: {detail}")]
     InvalidNftCreatorPublicKey {
         /// The rejected value.
-        message: String,
+        detail: String,
     },
     /// Token issuance parameters failed chain validation.
-    #[error("invalid token parameters: {message}")]
+    #[error("invalid token parameters: {detail}")]
     InvalidTokenParameters {
         /// Why the parameters are invalid.
-        message: String,
+        detail: String,
     },
     /// The transaction could not be constructed from its inputs and outputs.
-    #[error("failed to create transaction: {message}")]
+    #[error("failed to create transaction: {detail}")]
     TransactionCreation {
         /// Why construction failed.
-        message: String,
+        detail: String,
     },
     /// The signed transaction could not be constructed.
-    #[error("failed to create signed transaction: {message}")]
+    #[error("failed to create signed transaction: {detail}")]
     SignedTransactionCreation {
         /// Why construction failed.
-        message: String,
+        detail: String,
     },
     /// The partially signed transaction failed its consistency check.
-    #[error("failed to create partially signed transaction: {message}")]
+    #[error("failed to create partially signed transaction: {detail}")]
     PartiallySignedTransactionCreation {
         /// Why construction failed.
-        message: String,
+        detail: String,
     },
     /// An input witness could not be produced.
-    #[error("failed to sign input: {message}")]
+    #[error("failed to sign input: {detail}")]
     InputSigning {
         /// Why signing failed.
-        message: String,
+        detail: String,
     },
     /// Key generation or derivation failed.
-    #[error("failed to derive key: {message}")]
+    #[error("failed to derive key: {detail}")]
     KeyDerivation {
         /// Why derivation failed.
-        message: String,
+        detail: String,
     },
     /// The sighash could not be calculated.
-    #[error("failed to calculate sighash: {message}")]
+    #[error("failed to calculate sighash: {detail}")]
     Sighash {
         /// Why the calculation failed.
-        message: String,
+        detail: String,
     },
     /// A message could not be signed.
-    #[error("failed to sign message: {message}")]
+    #[error("failed to sign detail: {detail}")]
     MessageSigning {
         /// Why signing failed.
-        message: String,
+        detail: String,
     },
     /// A signature could not be verified.
-    #[error("signature verification failed: {message}")]
+    #[error("signature verification failed: {detail}")]
     SignatureVerification {
         /// Why verification failed.
-        message: String,
+        detail: String,
     },
     /// The HTLC secret hash is malformed.
-    #[error("invalid HTLC secret hash: {message}")]
+    #[error("invalid HTLC secret hash: {detail}")]
     InvalidHtlcSecretHash {
         /// The rejected value.
-        message: String,
+        detail: String,
     },
     /// The witness is not an HTLC spend of the expected variant.
     #[error("unexpected HTLC spend type")]
@@ -125,16 +125,16 @@ pub enum BindingsError {
     #[error("no witness found for the given input index")]
     InvalidWitnessCount,
     /// The transaction size could not be estimated.
-    #[error("failed to estimate transaction size: {message}")]
+    #[error("failed to estimate transaction size: {detail}")]
     SizeEstimation {
         /// Why the estimation failed.
-        message: String,
+        detail: String,
     },
     /// The effective pool balance could not be calculated.
-    #[error("failed to calculate effective pool balance: {message}")]
+    #[error("failed to calculate effective pool balance: {detail}")]
     EffectiveBalance {
         /// Why the calculation failed.
-        message: String,
+        detail: String,
     },
     /// Order freezing requires the orders V1 fork to be active at the height.
     #[error("orders V1 is not active at the specified height")]
@@ -143,28 +143,28 @@ pub enum BindingsError {
     #[error("transaction intent message is not a valid UTF-8 string")]
     IntentMessageNotUtf8,
     /// An amount string could not be parsed as a 128-bit atom count.
-    #[error("invalid amount: {message}")]
+    #[error("invalid amount: {detail}")]
     InvalidAmount {
         /// The rejected value.
-        message: String,
+        detail: String,
     },
     /// The transaction id is not a valid hex string.
-    #[error("invalid transaction id: {message}")]
+    #[error("invalid transaction id: {detail}")]
     InvalidTransactionId {
         /// The rejected value.
-        message: String,
+        detail: String,
     },
     /// The signed intent could not be verified.
-    #[error("transaction intent verification failed: {message}")]
+    #[error("transaction intent verification failed: {detail}")]
     IntentVerification {
         /// Why verification failed.
-        message: String,
+        detail: String,
     },
     /// A JSON representation could not be produced.
-    #[error("failed to produce JSON: {message}")]
+    #[error("failed to produce JSON: {detail}")]
     Json {
         /// Why the production failed.
-        message: String,
+        detail: String,
     },
 }
 
@@ -208,14 +208,14 @@ impl From<crypto::Error> for BindingsError {
     fn from(error: crypto::Error) -> Self {
         match error {
             crypto::Error::InvalidMnemonic(e) => Self::InvalidMnemonic {
-                message: clamp(e.to_string()),
+                detail: clamp(e.to_string()),
             },
             crypto::Error::Decoding(e) => Self::Decoding {
-                message: clamp(e.to_string()),
+                detail: clamp(e.to_string()),
             },
             crypto::Error::AddressParse { address, message } => Self::AddressParse {
                 address: clamp(address),
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::InvalidKeyIndex => Self::InvalidKeyIndex,
             crypto::Error::FixedTotalSupplyWithoutAmount => Self::FixedTotalSupplyWithoutAmount,
@@ -223,60 +223,60 @@ impl From<crypto::Error> for BindingsError {
             crypto::Error::ZeroMultisigRequiredSignatures => Self::ZeroMultisigRequiredSignatures,
             crypto::Error::InvalidNftCreatorPublicKey(message) => {
                 Self::InvalidNftCreatorPublicKey {
-                    message: clamp(message),
+                    detail: clamp(message),
                 }
             }
             crypto::Error::InvalidTokenParameters(message) => Self::InvalidTokenParameters {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::TransactionCreation(message) => Self::TransactionCreation {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::SignedTransactionCreation(message) => Self::SignedTransactionCreation {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::PartiallySignedTransactionCreation(message) => {
                 Self::PartiallySignedTransactionCreation {
-                    message: clamp(message),
+                    detail: clamp(message),
                 }
             }
             crypto::Error::InputSigning(message) => Self::InputSigning {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::KeyDerivation(message) => Self::KeyDerivation {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::Sighash(message) => Self::Sighash {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::MessageSigning(message) => Self::MessageSigning {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::SignatureVerification(message) => Self::SignatureVerification {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::InvalidHtlcSecretHash(message) => Self::InvalidHtlcSecretHash {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::UnexpectedHtlcSpendType => Self::UnexpectedHtlcSpendType,
             crypto::Error::NoInputOutpointFound => Self::NoInputOutpointFound,
             crypto::Error::InvalidWitnessCount => Self::InvalidWitnessCount,
             crypto::Error::SizeEstimation(message) => Self::SizeEstimation {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::EffectiveBalance(message) => Self::EffectiveBalance {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::OrdersV1NotActivated => Self::OrdersV1NotActivated,
             crypto::Error::IntentMessageNotUtf8 => Self::IntentMessageNotUtf8,
             crypto::Error::InvalidTransactionId(message) => Self::InvalidTransactionId {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::IntentVerification(message) => Self::IntentVerification {
-                message: clamp(message),
+                detail: clamp(message),
             },
             crypto::Error::Json(message) => Self::Json {
-                message: clamp(message),
+                detail: clamp(message),
             },
         }
     }
@@ -285,6 +285,6 @@ impl From<crypto::Error> for BindingsError {
 /// Maps a runtime-format decoding failure to [`BindingsError::Decoding`].
 pub(crate) fn decoding<E: std::fmt::Display>(error: E) -> BindingsError {
     BindingsError::Decoding {
-        message: error.to_string(),
+        detail: error.to_string(),
     }
 }

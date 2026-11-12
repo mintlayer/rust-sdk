@@ -24,7 +24,7 @@ use mintlayer_sdk::crypto;
 pub fn encode_outpoint_source_id(id: Vec<u8>, source: SourceId) -> Result<Vec<u8>, BindingsError> {
     if id.len() != 32 {
         return Err(BindingsError::Decoding {
-            message: "outpoint source id must be exactly 32 bytes".to_owned(),
+            detail: "outpoint source id must be exactly 32 bytes".to_owned(),
         });
     }
     let outpoint = crypto::encode_outpoint_source_id(H256::from_slice(&id), source.into());
@@ -179,7 +179,7 @@ pub fn estimate_transaction_size(
     let destinations: Vec<&str> = input_destinations.iter().map(String::as_str).collect();
     let size = crypto::estimate_transaction_size(&inputs, &destinations, &outputs, network.into())?;
     u64::try_from(size).map_err(|_| BindingsError::SizeEstimation {
-        message: "size exceeds u64".to_owned(),
+        detail: "size exceeds u64".to_owned(),
     })
 }
 
