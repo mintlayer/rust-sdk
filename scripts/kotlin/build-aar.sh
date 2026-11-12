@@ -42,9 +42,9 @@ for target in "${ABI_TARGETS[@]}"; do
 done
 cargo build --release --lib -p mintlayer-wallet-bindings
 cargo ndk --platform 24 \
+  --targets "${ABI_TARGETS[@]}" \
   -o "$KT_DIR/src/main/jniLibs" \
-  build --release --lib -p mintlayer-wallet-bindings \
-  -- "${ABI_TARGETS[@]}"
+  build --release --lib -p mintlayer-wallet-bindings
 
 echo "[2/4] generating Kotlin bindings" >&2
 case "$(uname -s)" in
