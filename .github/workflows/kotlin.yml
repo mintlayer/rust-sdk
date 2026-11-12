@@ -59,7 +59,7 @@ jobs:
           cache-read-only: false
 
       - name: Free disk space for the Android SDK and emulator
-        uses: jlumbroso/free-disk-space@54036f5543e5b1a7b8a5ae39cb7d4cad4d6a1cb2 # v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           android: true
