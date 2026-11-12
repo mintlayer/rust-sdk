@@ -33,6 +33,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- crypto: the `ml-*` mintlayer-core git dependencies are re-pinned from
+  rev `7f4393ac` to `3a43aba00` (the v1.4.5 release line plus the upstream
+  testnet checkpoint fix). The v1.4.5 tag itself contains two malformed
+  hex hashes in the testnet checkpoint data that make any testnet chain
+  config construction panic; upstream commit `3a43aba00` corrects them.
+  No SDK-facing behavior changes otherwise; the full test suite passes
+  unchanged.
 - **Breaking:** indexer `Transaction.block_id`, `Transaction.timestamp`
   and `Transaction.confirmations` are now `Option<...>`: a pending
   (mempool) transaction has `null` for all three on the wire, which

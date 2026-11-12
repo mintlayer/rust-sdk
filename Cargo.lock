@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "accounting"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "common",
  "parity-scale-codec",
@@ -558,8 +558,8 @@ dependencies = [
 
 [[package]]
 name = "chainstate-storage"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "accounting",
  "chainstate-types",
@@ -579,8 +579,8 @@ dependencies = [
 
 [[package]]
 name = "chainstate-types"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "common",
  "crypto",
@@ -671,8 +671,8 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "common"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "anyhow",
  "bech32",
@@ -721,8 +721,8 @@ dependencies = [
 
 [[package]]
 name = "consensus"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "chainstate-types",
  "common",
@@ -762,8 +762,8 @@ dependencies = [
 
 [[package]]
 name = "constraints-value-accumulator"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "common",
  "crypto",
@@ -832,8 +832,8 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "argon2",
  "bip39",
@@ -2054,8 +2054,8 @@ dependencies = [
 
 [[package]]
 name = "log_error"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "derive_more 1.0.0",
  "proc-macro2",
@@ -2065,8 +2065,8 @@ dependencies = [
 
 [[package]]
 name = "logging"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "log",
  "thiserror 1.0.69",
@@ -2165,8 +2165,8 @@ dependencies = [
 
 [[package]]
 name = "mintscript"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "common",
  "crypto",
@@ -2325,8 +2325,8 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orders-accounting"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "accounting",
  "common",
@@ -2508,8 +2508,8 @@ dependencies = [
 
 [[package]]
 name = "pos-accounting"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "accounting",
  "common",
@@ -2712,8 +2712,8 @@ dependencies = [
 
 [[package]]
 name = "randomness"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "rand 0.10.2",
  "rand 0.8.8",
@@ -2852,8 +2852,8 @@ dependencies = [
 
 [[package]]
 name = "rpc-description"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "rpc-description-macro",
  "serde_json",
@@ -2861,8 +2861,8 @@ dependencies = [
 
 [[package]]
 name = "rpc-description-macro"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2871,8 +2871,8 @@ dependencies = [
 
 [[package]]
 name = "rpc-types"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "hex",
  "rpc-description",
@@ -3028,8 +3028,8 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "script"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "crypto",
  "hex",
@@ -3176,8 +3176,8 @@ dependencies = [
 
 [[package]]
 name = "serialization"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "hex",
  "rpc-description",
@@ -3190,16 +3190,16 @@ dependencies = [
 
 [[package]]
 name = "serialization-core"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "parity-scale-codec",
 ]
 
 [[package]]
 name = "serialization-tagged"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "serialization-core",
  "serialization-tagged-derive",
@@ -3208,8 +3208,8 @@ dependencies = [
 
 [[package]]
 name = "serialization-tagged-derive"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "itertools 0.14.0",
  "proc-macro2",
@@ -3341,8 +3341,8 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "storage"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "common",
  "serialization",
@@ -3352,8 +3352,8 @@ dependencies = [
 
 [[package]]
 name = "storage-core"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "common",
  "itertools 0.14.0",
@@ -3364,8 +3364,8 @@ dependencies = [
 
 [[package]]
 name = "storage-inmemory"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "storage-core",
 ]
@@ -3613,8 +3613,8 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokens-accounting"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "accounting",
  "chainstate-types",
@@ -3824,8 +3824,8 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tx-verifier"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "accounting",
  "chainstate-storage",
@@ -3843,6 +3843,7 @@ dependencies = [
  "randomness",
  "serialization",
  "static_assertions",
+ "strum 0.26.3",
  "thiserror 1.0.69",
  "tokens-accounting",
  "utils",
@@ -3851,16 +3852,16 @@ dependencies = [
 
 [[package]]
 name = "typename"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "typename-derive",
 ]
 
 [[package]]
 name = "typename-derive"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "itertools 0.14.0",
  "quote",
@@ -3948,8 +3949,8 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utils"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "anyhow",
  "clap",
@@ -3977,8 +3978,8 @@ dependencies = [
 
 [[package]]
 name = "utxo"
-version = "1.4.0"
-source = "git+https://github.com/mintlayer/mintlayer-core?rev=7f4393ac9c07c080661a1bd40e8a6133a98b5155#7f4393ac9c07c080661a1bd40e8a6133a98b5155"
+version = "1.4.5"
+source = "git+https://github.com/mintlayer/mintlayer-core?rev=3a43aba00251a71b79899130bdd753be6a4decb6#3a43aba00251a71b79899130bdd753be6a4decb6"
 dependencies = [
  "chainstate-types",
  "common",
