@@ -160,6 +160,15 @@ The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded
 in the repository `CHANGELOG.md`.
 
+## Building the Android AAR
+
+The canonical entry point for contributors with the Android toolchain
+installed (Rust 1.92+, cargo-ndk, JDK 17, Android SDK + NDK, Gradle 8.7+):
+
+```sh
+bash scripts/kotlin/build-aar.sh
+```
+
 ## Building from source
 
 Contributors need Rust 1.92+ (see the repository MSRV):

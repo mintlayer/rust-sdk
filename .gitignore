@@ -29,3 +29,8 @@ secrets/
 .orc/
 bindings/tests/fixtures/
 node_modules/
+bindings/kotlin/build/
+bindings/kotlin/.gradle/
+bindings/kotlin/src/main/kotlin/
+bindings/kotlin/src/main/jniLibs/
+bindings/kotlin/local.properties
