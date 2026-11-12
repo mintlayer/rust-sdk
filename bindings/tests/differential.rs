@@ -798,10 +798,13 @@ fn dispatch(
                 .collect::<Vec<_>>();
             let outputs = blobs_arg(args, "outputs", &context)?;
             let network = network_arg(args, &context)?;
+            // The tolerance is recorded per case by the fixture generator
+            // (the 1.4.0 wasm-lib build era drifted on size estimation).
+            let tolerance = result.get("tolerance").and_then(|value| value.as_u64()).unwrap_or(0);
             expect_u64_with_tolerance(
                 result,
                 estimate_transaction_size(inputs, destinations, outputs, network)?,
-                8,
+                tolerance,
                 &context,
             )
         }
@@ -1098,6 +1101,16 @@ fn dispatch(
 #[test]
 fn differential_parity_with_wasm_reference() {
     if !fixture_path().exists() {
+        // In CI the fixture is always generated before this test runs; a
+        // missing fixture there means the generation step failed and must
+        // not pass silently. Locally the skip keeps plain `cargo test`
+        // working without Node.
+        if std::env::var("DIFFERENTIAL_FIXTURES_REQUIRED").as_deref() == Ok("1") {
+            panic!(
+                "differential fixtures missing at {FIXTURE}: the fixture-generation \
+                 step must run before this test in CI"
+            );
+        }
         eprintln!(
             "SKIPPED: differential fixtures missing at {FIXTURE}; run \
              `cd scripts/differential && npm ci && node generate-fixtures.cjs` to generate them."

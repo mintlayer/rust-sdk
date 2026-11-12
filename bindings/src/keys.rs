@@ -103,7 +103,7 @@ pub fn extended_private_key_encode(key: ExtendedPrivateKeyData) -> Result<Vec<u8
     // (holder byte, zero path levels, chain code, scalar).
     if key.derivation_path.len() > u8::MAX as usize {
         return Err(BindingsError::Decoding {
-            message: "derivation path length out of range".to_owned(),
+            message: "extended private key record: derivation path length out of range".to_owned(),
         });
     }
 

@@ -173,6 +173,13 @@ pub struct TxAdditionalInfo {
 
 /// Parses a decimal atom string into an amount.
 pub(crate) fn amount_from_atoms(atoms: &str) -> Result<Amount, BindingsError> {
+    // Reject non-digit inputs (a leading `+` or whitespace would parse via
+    // `u128::from_str` but is not accepted by the reference implementation).
+    if atoms.is_empty() || !atoms.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(BindingsError::InvalidAmount {
+            message: "amount must be a decimal digit string".to_owned(),
+        });
+    }
     atoms
         .parse::<u128>()
         .map(Amount::from_atoms)

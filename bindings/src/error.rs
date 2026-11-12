@@ -208,54 +208,76 @@ impl From<crypto::Error> for BindingsError {
     fn from(error: crypto::Error) -> Self {
         match error {
             crypto::Error::InvalidMnemonic(e) => Self::InvalidMnemonic {
-                message: e.to_string(),
+                message: clamp(e.to_string()),
             },
             crypto::Error::Decoding(e) => Self::Decoding {
-                message: e.to_string(),
+                message: clamp(e.to_string()),
             },
             crypto::Error::AddressParse { address, message } => Self::AddressParse {
                 address: clamp(address),
-                message,
+                message: clamp(message),
             },
             crypto::Error::InvalidKeyIndex => Self::InvalidKeyIndex,
             crypto::Error::FixedTotalSupplyWithoutAmount => Self::FixedTotalSupplyWithoutAmount,
             crypto::Error::InvalidMarginRatio(ratio) => Self::InvalidMarginRatio { ratio },
             crypto::Error::ZeroMultisigRequiredSignatures => Self::ZeroMultisigRequiredSignatures,
             crypto::Error::InvalidNftCreatorPublicKey(message) => {
-                Self::InvalidNftCreatorPublicKey { message }
+                Self::InvalidNftCreatorPublicKey {
+                    message: clamp(message),
+                }
             }
-            crypto::Error::InvalidTokenParameters(message) => {
-                Self::InvalidTokenParameters { message }
-            }
-            crypto::Error::TransactionCreation(message) => Self::TransactionCreation { message },
-            crypto::Error::SignedTransactionCreation(message) => {
-                Self::SignedTransactionCreation { message }
-            }
+            crypto::Error::InvalidTokenParameters(message) => Self::InvalidTokenParameters {
+                message: clamp(message),
+            },
+            crypto::Error::TransactionCreation(message) => Self::TransactionCreation {
+                message: clamp(message),
+            },
+            crypto::Error::SignedTransactionCreation(message) => Self::SignedTransactionCreation {
+                message: clamp(message),
+            },
             crypto::Error::PartiallySignedTransactionCreation(message) => {
-                Self::PartiallySignedTransactionCreation { message }
+                Self::PartiallySignedTransactionCreation {
+                    message: clamp(message),
+                }
             }
-            crypto::Error::InputSigning(message) => Self::InputSigning { message },
-            crypto::Error::KeyDerivation(message) => Self::KeyDerivation { message },
-            crypto::Error::Sighash(message) => Self::Sighash { message },
-            crypto::Error::MessageSigning(message) => Self::MessageSigning { message },
-            crypto::Error::SignatureVerification(message) => {
-                Self::SignatureVerification { message }
-            }
-            crypto::Error::InvalidHtlcSecretHash(message) => {
-                Self::InvalidHtlcSecretHash { message }
-            }
+            crypto::Error::InputSigning(message) => Self::InputSigning {
+                message: clamp(message),
+            },
+            crypto::Error::KeyDerivation(message) => Self::KeyDerivation {
+                message: clamp(message),
+            },
+            crypto::Error::Sighash(message) => Self::Sighash {
+                message: clamp(message),
+            },
+            crypto::Error::MessageSigning(message) => Self::MessageSigning {
+                message: clamp(message),
+            },
+            crypto::Error::SignatureVerification(message) => Self::SignatureVerification {
+                message: clamp(message),
+            },
+            crypto::Error::InvalidHtlcSecretHash(message) => Self::InvalidHtlcSecretHash {
+                message: clamp(message),
+            },
             crypto::Error::UnexpectedHtlcSpendType => Self::UnexpectedHtlcSpendType,
             crypto::Error::NoInputOutpointFound => Self::NoInputOutpointFound,
             crypto::Error::InvalidWitnessCount => Self::InvalidWitnessCount,
-            crypto::Error::SizeEstimation(message) => Self::SizeEstimation { message },
-            crypto::Error::EffectiveBalance(message) => Self::EffectiveBalance { message },
+            crypto::Error::SizeEstimation(message) => Self::SizeEstimation {
+                message: clamp(message),
+            },
+            crypto::Error::EffectiveBalance(message) => Self::EffectiveBalance {
+                message: clamp(message),
+            },
             crypto::Error::OrdersV1NotActivated => Self::OrdersV1NotActivated,
             crypto::Error::IntentMessageNotUtf8 => Self::IntentMessageNotUtf8,
             crypto::Error::InvalidTransactionId(message) => Self::InvalidTransactionId {
                 message: clamp(message),
             },
-            crypto::Error::IntentVerification(message) => Self::IntentVerification { message },
-            crypto::Error::Json(message) => Self::Json { message },
+            crypto::Error::IntentVerification(message) => Self::IntentVerification {
+                message: clamp(message),
+            },
+            crypto::Error::Json(message) => Self::Json {
+                message: clamp(message),
+            },
         }
     }
 }

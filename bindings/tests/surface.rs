@@ -420,3 +420,30 @@ fn error_payloads_are_sanitized_and_bounded() {
         "payload must contain no control/spoofing/separator characters"
     );
 }
+
+#[test]
+fn amount_strings_must_be_plain_decimals() {
+    // The reference implementation rejects non-digit amount strings; the
+    // bindings must reject the same inputs.
+    for hostile in ["+100", "-1", "", " 100", "1 0"] {
+        let error = encode_output_transfer(
+            hostile.to_owned(),
+            "tmt1qyxqfq37rra32sq6zhayqcpjwh4trc07mcfardwt".to_owned(),
+            Network::Testnet,
+        )
+        .expect_err("non-decimal amount must be rejected");
+        assert!(
+            matches!(error, BindingsError::InvalidAmount { .. }),
+            "expected InvalidAmount for {hostile:?}, got {error:?}"
+        );
+    }
+    assert!(
+        encode_output_transfer(
+            "100".to_owned(),
+            "tmt1qyxqfq37rra32sq6zhayqcpjwh4trc07mcfardwt".to_owned(),
+            Network::Testnet
+        )
+        .is_ok(),
+        "plain decimal amount must be accepted"
+    );
+}

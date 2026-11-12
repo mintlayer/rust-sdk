@@ -104,6 +104,8 @@ jobs:
     name: Differential parity (wasm-lib 1.4.0)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
@@ -117,6 +119,8 @@ jobs:
         run: npm ci --prefix scripts/differential && node scripts/differential/generate-fixtures.cjs
       - name: Replay fixtures through the bindings
         run: cargo test --locked -p mintlayer-wallet-bindings --test differential
+        env:
+          DIFFERENTIAL_FIXTURES_REQUIRED: "1"
 
   license:
     name: License headers

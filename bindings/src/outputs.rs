@@ -173,7 +173,10 @@ pub fn encode_output_issue_fungible_token(
     current_block_height: u64,
     network: Network,
 ) -> Result<Vec<u8>, BindingsError> {
-    let _ = current_block_height; // accepted for wasm-parity; unused upstream
+    // Accepted for wasm-call-signature parity. Upstream ignores it: the
+    // issuance fee and supply rules do not depend on the height here, so
+    // callers may pass their tip height and it has no effect on the output.
+    let _ = current_block_height;
     let total_supply = match total_supply {
         TotalSupply::Lockable => TokenTotalSupply::Lockable,
         TotalSupply::Unlimited => TokenTotalSupply::Unlimited,
@@ -212,7 +215,10 @@ pub fn encode_output_issue_nft(
     current_block_height: u64,
     network: Network,
 ) -> Result<Vec<u8>, BindingsError> {
-    let _ = current_block_height; // accepted for wasm-parity; unused upstream
+    // Accepted for wasm-call-signature parity. Upstream ignores it: the
+    // issuance fee and supply rules do not depend on the height here, so
+    // callers may pass their tip height and it has no effect on the output.
+    let _ = current_block_height;
     let creator = creator
         .map(|blob| PublicKey::decode_all(&mut &blob[..]).map_err(decoding))
         .transpose()?;
