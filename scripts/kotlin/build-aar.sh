@@ -41,7 +41,7 @@ for target in "${ABI_TARGETS[@]}"; do
   rustup target add "$target"
 done
 cargo build --release --lib -p mintlayer-wallet-bindings
-cargo ndk --platform android-24 \
+cargo ndk --platform 24 \
   -o "$KT_DIR/src/main/jniLibs" \
   build --release --lib -p mintlayer-wallet-bindings \
   -- "${ABI_TARGETS[@]}"
