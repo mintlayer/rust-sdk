@@ -58,6 +58,17 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-read-only: false
 
+      - name: Free disk space for the Android SDK and emulator
+        uses: jlumbroso/free-disk-space@54036f5543e5b1a7b8a5ae39cb7d4cad4d6a1cb2 # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
       - name: Build AAR (3 ABIs + generated Kotlin)
         run: bash scripts/kotlin/build-aar.sh
 
@@ -71,7 +82,9 @@ jobs:
       - name: Run on-device acceptance tests (emulator)
         uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
         with:
-          api-level: 34
+          api-level: 33
           target: google_apis
           arch: x86_64
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -no-audio -camera-back none
+          disable-animations: true
           script: cd bindings/kotlin && gradle connectedDebugAndroidTest
