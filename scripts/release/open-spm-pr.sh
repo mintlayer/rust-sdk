@@ -20,65 +20,73 @@ DEFAULT_BRANCH="${4:?DEFAULT_BRANCH required}"
 
 BRANCH="pin-spm-checksum-${VERSION}"
 
+# Workflow-command values need %-/CR-/LF-escaping to stay one annotation.
+esc() {
+  local s="$1"
+  s="${s//%/%25}"
+  s="${s//$'\r'/%0D}"
+  s="${s//$'\n'/%0A}"
+  printf '%s' "$s"
+}
+
 git config user.name "mintlayer-release-bot"
 git config user.email "hello@mintlayer.org"
 
+if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+  echo "::error::unexpected default branch format: $(esc "${DEFAULT_BRANCH}")"
+  exit 1
+fi
+
 # The tag must sit on the default branch's history; otherwise the pin PR
 # would carry unrelated commits. Fail loudly before any push. Fetch with
-# an explicit refspec so the remote-tracking ref exists regardless of the
-# checkout action's fetch configuration.
-git fetch origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+# an explicit full-history refspec so the ancestry check sees the real
+# graph (the release checkout is shallow by default).
+git fetch --unshallow origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}" 2>/dev/null \
+  || git fetch origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
 if ! git merge-base --is-ancestor "refs/tags/${TAG}" "origin/${DEFAULT_BRANCH}"; then
-  # Workflow-command values need %-/CR-/LF-escaping to stay one annotation.
-  esc() {
-    local s="$1"
-    s="${s//%/%25}"
-    s="${s//$'\r'/%0D}"
-    s="${s//$'\n'/%0A}"
-    printf '%s' "$s"
-  }
   echo "::error::tag $(esc "${TAG}") is not an ancestor of $(esc "${DEFAULT_BRANCH}"); cut the tag from the default branch tip"
   exit 1
 fi
 
 git checkout -B "${BRANCH}"
 git add Package.swift
-if git diff --cached --quiet; then
-  # An empty diff is only success if the pin is genuinely present; an
-  # unchanged file could equally mean the substitutions no-op'd on a
-  # drifted Package.swift. Fail closed instead of skipping the pin.
-  if grep -qF "${XCSUM}" Package.swift && grep -qF "${TAG}" Package.swift; then
-    echo "Package.swift already pinned to this checksum; nothing to do"
-    exit 0
-  fi
-  echo "::error::Package.swift did not change and does not carry the expected release tag or checksum"
+# Both substitutions must be present, on every path: an empty diff with
+# the pin present is idempotent success, anything else fails closed.
+if ! grep -qF "${XCSUM}" Package.swift \
+  || ! grep -qF "let releaseTag = \"${TAG}\"" Package.swift; then
+  echo "::error::Package.swift does not carry the expected release tag and checksum after substitution"
   exit 1
+fi
+if git diff --cached --quiet; then
+  echo "Package.swift already pinned to this checksum; nothing to do"
+  exit 0
 fi
 git commit -m "chore: pin the SPM checksum to ${TAG}"
 
-# Only an OPEN pull request from this repository's own branch counts.
-# Fork PRs with a colliding head-branch name (same owner via an org repo
-# or otherwise) must not suppress the genuine bot PR. The owner name is
-# validated before it is interpolated into the jq program; repo names
-# cannot contain quotes or backslashes, and this fails closed otherwise.
+# Only an OPEN pull request against the default branch from this
+# repository's own branch counts. Fork PRs and same-owner cross-repo PRs
+# with a colliding head-branch name must not suppress the genuine bot PR;
+# a PR targeting a non-default base must not capture the force-push. The
+# owner name is validated before it is interpolated into the jq program.
 owner="${GITHUB_REPOSITORY%%/*}"
 if [[ ! "${owner}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
-  echo "::error::unexpected repository owner format: ${owner}"
+  echo "::error::unexpected repository owner format: $(esc "${owner}")"
   exit 1
 fi
 existing_pr="$(gh pr list --head "${BRANCH}" --state open --limit 200 \
-  --json number,headRepositoryOwner,isCrossRepository \
-  --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false)][0].number // empty")"
+  --json number,headRepositoryOwner,isCrossRepository,baseRefName \
+  --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")"
 
 # The branch is disposable bot state; force-push keeps re-runs working
 # when the remote branch already exists. It happens after the existence
-# decision so a spoofed fork PR never references the bot commit.
+# decision so a spoofed PR never references the bot commit.
 git push --force origin "${BRANCH}"
 
 if [ -n "${existing_pr}" ]; then
   echo "checksum-pin PR already exists (#${existing_pr}); updated its head branch"
 else
   gh pr create \
+    --base "${DEFAULT_BRANCH}" \
     --head "${BRANCH}" \
     --title "chore: pin the SPM checksum to ${TAG}" \
     --body "Attaches the released XCFramework checksum to the root Package.swift so SPM resolves the ${TAG} artifact.

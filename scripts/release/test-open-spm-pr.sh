@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Unit tests for scripts/release/open-spm-pr.sh using stub git/gh on PATH.
-# Covers: tag-ancestry guard, empty-diff idempotency (pin present vs
-# drifted file), owner/cross-repo PR detection, force-push ordering, and
-# the create path. Run by lint.yml and locally before releases.
+# Covers: tag-ancestry guard, both substitution verifications (pin fully
+# present / partially drifted / absent), owner/cross-repo/base-branch PR
+# detection, force-push ordering, and owner validation. Run by lint.yml
+# and locally before releases.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,9 +11,12 @@ UNDER_TEST="${SCRIPT_DIR}/open-spm-pr.sh"
 TMP="$(mktemp -d)"
 STUBS="${TMP}/stubs"
 LOG="${TMP}/stub.log"
+OUT="${TMP}/out.log"
 trap 'rm -rf "${TMP}"' EXIT
 mkdir -p "${STUBS}/repo"
 export LOG
+
+command -v jq >/dev/null 2>&1 || { echo "jq is required by this test harness"; exit 1; }
 
 pass=0
 fail=0
@@ -33,8 +37,6 @@ case "$1 $2" in
   "merge-base --is-ancestor") exit "$(cat "${CASE_DIR}/ancestry" 2>/dev/null || echo 1)" ;;
   "diff --cached") [ "$(cat "${CASE_DIR}/staged_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "checkout -B")
-    # The script runs git checkout inside the repo dir; copy the fixture
-    # next to it so `git add Package.swift` / `grep` see controlled data.
     cp "${CASE_DIR}/package_swift" "$(dirname "$0")/repo/Package.swift"
     exit 0 ;;
 esac
@@ -51,50 +53,59 @@ if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
     [ "${prev}" = "--jq" ] && prog="$a"
     prev="$a"
   done
-  if [ -n "${prog}" ] && command -v jq >/dev/null 2>&1; then
-    printf '%s' "${payload}" | jq -r "${prog}"
-  else
-    printf '%s' "${payload}"
-  fi
+  printf '%s' "${payload}" | jq -r "${prog}"
 fi
 exit 0
 EOF
 chmod +x "${STUBS}/git" "${STUBS}/gh"
 
 XCSUM="aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"
-PINNED="let releaseTag = \"wallet-bindings-v1.2.3\" // ...
-checksum: \"${XCSUM}\""
-DRIFTED="let releaseTag = \"wallet-bindings-v9.9.9\" // ...
-checksum: \"deadbeef\""
+FULLY_PINNED='let releaseTag = "wallet-bindings-v1.2.3" // ...
+checksum: "'"${XCSUM}"'"'
+PARTIAL_DRIFT='let releaseTag = "wallet-bindings-v1.2.2" // ...
+checksum: "'"${XCSUM}"'"'
+NOT_PINNED='let releaseTag = "wallet-bindings-v9.9.9" // ...
+checksum: "deadbeef"'
 
-LOG_CONTENTS=""
-run_case() { # <name> <expected_exit>
-  local name="$1" expected="$2" actual=0
-  ( cd "${STUBS}/repo" && \
-    PATH="${STUBS}:${PATH}" \
-    GITHUB_REPOSITORY="mintlayer/rust-sdk" \
-    CASE_DIR="${TMP}" \
-    bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
-      >/dev/null 2>&1 ) || actual=$?
-  LOG_CONTENTS="$(cat "${LOG}" 2>/dev/null || true)"
-  if [ "${actual}" = "${expected}" ]; then ok "${name}"; else bad "${name}" "exit ${actual}, want ${expected}"; fi
-  : > "${LOG}"
+# PR fixtures; baseRefName is main unless stated.
+echo '[]' > "${TMP}/pr.none"
+echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.own"
+echo '[{"number": 9, "headRepositoryOwner": {"login": "evil"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.evillow"
+echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": true, "baseRefName": "main"}]' > "${TMP}/pr.fork"
+echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "develop"}]' > "${TMP}/pr.wrongbase"
+
+# set_fixtures <ancestry> <staged_diff> <package_swift> <existing_pr>
+set_fixtures() {
+  printf '%s' "$1" > "${TMP}/ancestry"
+  printf '%s' "$2" > "${TMP}/staged_diff"
+  printf '%s' "$3" > "${TMP}/package_swift"
+  cp "${TMP}/$4" "${TMP}/existing_pr"
 }
 
-printf '%s' "${PINNED}" > "${TMP}/package_swift.pinned"
-printf '%s' "${DRIFTED}" > "${TMP}/package_swift.drifted"
-echo '[]' > "${TMP}/existing_pr.empty"
-echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false}]' > "${TMP}/existing_pr.own"
-echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": true}]' > "${TMP}/existing_pr.fork"
+# run_case <name> <expected_exit> [repository]
+run_case() {
+  local name="$1" expected="$2" repo="${3:-mintlayer/rust-sdk}" actual=0
+  : > "${LOG}"
+  ( cd "${STUBS}/repo" && \
+    PATH="${STUBS}:${PATH}" \
+    GITHUB_REPOSITORY="${repo}" \
+    CASE_DIR="${TMP}" \
+    bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+      > "${OUT}" 2>&1 ) || actual=$?
+  LOG_CONTENTS="$(cat "${LOG}")"
+  if [ "${actual}" = "${expected}" ]; then
+    ok "${name}"
+  else
+    bad "${name}" "exit ${actual}, want ${expected}; output: $(cat "${OUT}")"
+  fi
+}
 
 # 1. Tag not an ancestor of the default branch -> fail loudly.
-printf '1' > "${TMP}/ancestry"; printf '1' > "${TMP}/staged_diff"
-cp "${TMP}/package_swift.drifted" "${TMP}/package_swift"
+set_fixtures 1 1 "${NOT_PINNED}" pr.none
 run_case "non-ancestor tag fails" 1
 
 # 2. Ancestor + real diff -> success; push issued before create.
-printf '0' > "${TMP}/ancestry"; printf '1' > "${TMP}/staged_diff"
-cp "${TMP}/package_swift.drifted" "${TMP}/package_swift"
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 run_case "diff present creates PR" 0
 if grep -q -- "push --force origin pin-spm-checksum-1.2.3" <<< "${LOG_CONTENTS}"; then
   ok "force-push issued"
@@ -114,9 +125,8 @@ else
   bad "push precedes create" "${LOG_CONTENTS}"
 fi
 
-# 3. Empty diff + pin genuinely present -> idempotent success, no create.
-printf '0' > "${TMP}/ancestry"; printf '0' > "${TMP}/staged_diff"
-cp "${TMP}/package_swift.pinned" "${TMP}/package_swift"
+# 3. Empty diff + both substitutions present -> idempotent success.
+set_fixtures 0 0 "${FULLY_PINNED}" pr.none
 run_case "empty diff with pin exits 0" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
   bad "no create when pinned" "${LOG_CONTENTS}"
@@ -124,15 +134,17 @@ else
   ok "no create when pinned"
 fi
 
-# 4. Empty diff + pin ABSENT (sed no-op'd on drifted file) -> fail closed.
-printf '0' > "${TMP}/ancestry"; printf '0' > "${TMP}/staged_diff"
-cp "${TMP}/package_swift.drifted" "${TMP}/package_swift"
+# 4. Empty diff + pin absent -> fail closed.
+set_fixtures 0 0 "${NOT_PINNED}" pr.none
 run_case "empty diff without pin fails" 1
 
-# 5. Open same-repo PR exists -> detected, no duplicate create.
-printf '0' > "${TMP}/ancestry"; printf '1' > "${TMP}/staged_diff"
-cp "${TMP}/package_swift.drifted" "${TMP}/package_swift"
-cp "${TMP}/existing_pr.own" "${TMP}/existing_pr"
+# 5. Partial drift: new checksum but OLD tag -> fail closed (the sed for
+# the tag no-op'd; publishing would break the binaryTarget URL).
+set_fixtures 0 1 "${PARTIAL_DRIFT}" pr.none
+run_case "partial drift (checksum new, tag old) fails" 1
+
+# 6. Open same-repo PR against main -> detected, no duplicate create.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.own
 run_case "own open PR detected" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
   bad "no duplicate create" "${LOG_CONTENTS}"
@@ -140,14 +152,36 @@ else
   ok "no duplicate create"
 fi
 
-# 6. Open fork PR with colliding head branch -> ignored, create proceeds.
-cp "${TMP}/existing_pr.fork" "${TMP}/existing_pr"
+# 7. Open different-owner PR with colliding head branch -> create proceeds.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.evillow
+run_case "different-owner PR ignored, create proceeds" 0
+if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
+  ok "create despite different-owner PR"
+else
+  bad "create despite different-owner PR" "${LOG_CONTENTS}"
+fi
+
+# 8. Open fork PR with colliding head branch -> create proceeds.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.fork
 run_case "fork PR ignored, create proceeds" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
   ok "create despite fork PR"
 else
   bad "create despite fork PR" "${LOG_CONTENTS}"
 fi
+
+# 9. Open same-owner PR against a non-default base -> create proceeds.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.wrongbase
+run_case "wrong-base PR ignored, create proceeds" 0
+if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
+  ok "create despite wrong-base PR"
+else
+  bad "create despite wrong-base PR" "${LOG_CONTENTS}"
+fi
+
+# 10. Malformed repository owner -> fail closed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+run_case "invalid owner fails" 1 "bad..owner/rust-sdk"
 
 echo "passed: ${pass}, failed: ${fail}"
 [ "${fail}" = "0" ]

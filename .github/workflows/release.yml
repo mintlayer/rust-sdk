@@ -22,6 +22,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The job never pushes; keep the token off disk so a compromised
+          # build script cannot read it from .git/config.
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
         with:
@@ -77,6 +81,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
         with:
@@ -109,6 +115,10 @@ jobs:
       VERSION: ""
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The ancestry check in open-spm-pr.sh needs the full graph; a
+          # shallow clone would reduce it to a tip-equality check.
+          fetch-depth: 0
 
       - name: Verify tag matches the crate version
         run: |
@@ -122,7 +132,11 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           declared=$(grep -m1 '^version = ' bindings/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
           if [ "$declared" != "$VERSION" ]; then
-            echo "::error::tag version ($VERSION) does not match bindings/Cargo.toml version ($declared)"
+            # Plain log lines, not a workflow annotation: $declared comes
+            # from the repo at the tag and is not %-escaped here.
+            echo "::error::tag version does not match bindings/Cargo.toml version"
+            echo "tag version: ${VERSION}"
+            echo "crate version: ${declared}"
             exit 1
           fi
 
@@ -141,7 +155,7 @@ jobs:
           cd dist
           # The xcframework zip ships its own SHA256SUMS; merge everything
           # into one manifest covering all release artifacts.
-          grep -v 'MintlayerWalletBindings.xcframework.zip' SHA256SUMS > /tmp/manifest || true
+          grep -v 'MintlayerWalletBindings.xcframework.zip' SHA256SUMS > /tmp/manifest
           sha256sum MintlayerWalletBindings.xcframework.zip >> /tmp/manifest
           sha256sum mintlayer-wallet-bindings-*.aar >> /tmp/manifest
           sha256sum swift-sources/MintlayerWalletBindings.swift >> /tmp/manifest
@@ -159,9 +173,10 @@ jobs:
             -e "s|let releaseTag = \"wallet-bindings-v[^\"]*\"|let releaseTag = \"$TAG\"|" \
             -e "s|checksum: \"[0-9a-f]*\"|checksum: \"$xcsum\"|" \
             Package.swift
-          # The substitutions must actually land; a no-op sed on a drifted
+          # Both substitutions must actually land; a no-op sed on a drifted
           # Package.swift must fail the release rather than skip the pin.
           grep -F "$xcsum" Package.swift >/dev/null
+          grep -F "let releaseTag = \"$TAG\"" Package.swift >/dev/null
           grep -E "releaseTag|checksum" Package.swift
           echo "XCSUM=$xcsum" >> "$GITHUB_ENV"
 
