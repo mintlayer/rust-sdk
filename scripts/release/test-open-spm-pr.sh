@@ -240,7 +240,14 @@ assert_no_mutations
 
 # 7. Open same-repo PR against main -> detected, no duplicate create.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
-run_case "own open PR detected" 0
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+echo "DBG7 rc=${rc} OUT=[$(cat "${OUT}")]"
+if [ "${rc}" = "0" ]; then ok "own open PR detected"; else bad "own open PR detected" "exit ${rc}"; fi
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
   bad "no duplicate create" "${LOG_CONTENTS}"
 else

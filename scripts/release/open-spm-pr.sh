@@ -212,7 +212,7 @@ superseded=""
 # this run even when their branch names collide with the namespace.
 old_prs="$(gh pr list --state open --paginate \
   --json number,headRefName,headRepositoryOwner,isCrossRepository,baseRefName \
-  --jq ".[] | select(.headRefName | startswith(\"pin-spm-checksum-\") and .headRefName != \"${BRANCH}\" and .headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\") | [.number, .headRefName] | @tsv")" \
+  --jq ".[] | select((.headRefName | startswith(\"pin-spm-checksum-\")) and .headRefName != \"${BRANCH}\" and .headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\") | \"\(.number)\t\(.headRefName)\"")" \
   || { echo "::error::failed to list open pin PRs for superseding"; exit 1; }
 while IFS=$'\t' read -r old_pr old_branch; do
   [ -n "${old_pr}" ] || continue
