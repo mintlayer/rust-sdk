@@ -31,6 +31,9 @@ XCSUM="${3:?XCSUM required}"
 DEFAULT_BRANCH="${4:?DEFAULT_BRANCH required}"
 
 BRANCH="pin-spm-checksum-${VERSION}"
+# The VERSION charset admits refname-invalid values ('..', trailing
+# '.'): validate before any git operation fails late with a raw error.
+git check-ref-format --branch "${BRANCH}"
 
 # Mirror the workflow's validation so direct/manual invocations get the
 # same fail-closed guarantees as the release run.
@@ -198,9 +201,43 @@ existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
   --json number,headRepositoryOwner,isCrossRepository,baseRefName \
   --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")"
 
-# The branch is disposable bot state; force-push keeps re-runs working
-# when the remote branch already exists. It happens after the existence
-# decision so a spoofed PR never references the bot commit.
+# Supersede strictly-older open pin PRs and refuse when a strictly
+# NEWER release's pin PR is still open (merging it after this one would
+# rewind the pin; the concurrency group serializes runs, not queue
+# order). Runs on both the create and reuse paths. Close failures fail
+# the run - a stale open pin PR is a rewind hazard.
+superseded=""
+while IFS=$'\t' read -r old_pr old_branch; do
+  [ -n "${old_pr}" ] || continue
+  [ "${old_branch}" = "${BRANCH}" ] && continue
+  old_version="${old_branch#pin-spm-checksum-}"
+  if [ "${old_version}" = "${VERSION}" ]; then continue; fi
+  cmp_old="$(semver_cmp "${VERSION}" "${old_version}")"
+  if [[ ! "${cmp_old}" =~ ^-?[012]$ ]]; then
+    echo "::error::could not compare ${VERSION} against open pin PR #${old_pr} (${old_version})"
+    exit 1
+  fi
+  if [ "${cmp_old}" -le 0 ]; then
+    echo "::error::open pin PR #${old_pr} pins ${old_version} (>= ${VERSION}); close or merge it before releasing ${VERSION}"
+    exit 1
+  fi
+  gh pr close "${old_pr}" \
+    --comment "Superseded by #${existing_pr:-this run} for ${TAG}: an older pin must not merge after a newer one."
+  superseded="${superseded} #${old_pr}"
+done << OLD_PRS
+$(gh pr list --state open --paginate --limit 500 \
+    --json number,headRefName \
+    --jq '.[] | select(.headRefName | startswith("pin-spm-checksum-") and . != "'"${BRANCH}"'") | [.number, .headRefName] | @tsv') || {
+  echo "::error::failed to list open pin PRs for superseding"
+  exit 1
+}
+OLD_PRS
+[ -z "${superseded}" ] || echo "superseded older open pin PR(s):${superseded}"
+
+# The branch is disposable bot state; force-with-lease-like semantics
+# are unnecessary because the list above is authoritative: the push
+# happens after the existence decision so a spoofed PR never references
+# the bot commit.
 git push --force origin "${BRANCH}"
 
 if [ -n "${existing_pr}" ]; then
@@ -216,12 +253,36 @@ Checksum: \`${XCSUM}\`
 
 The GitHub release for this tag is published before this PR is opened.
 Merge to activate."
-  # Supersede older still-open pin PRs: at most one open pin PR may
-  # exist, so no merge order can rewind the pin to an older release.
-  for old_pr in $(gh pr list --state open --limit 100 \
+  # Supersede strictly-older open pin PRs and refuse when a strictly
+  # NEWER release's pin PR is still open (merging it after this one
+  # would rewind the pin). Runs on both the create and reuse paths;
+  # close failures fail the run - a stale open pin PR is a rewind hazard.
+  old_prs="$(gh pr list --state open --paginate --limit 500 \
       --json number,headRefName \
-      --jq '.[] | select(.headRefName | startswith("pin-spm-checksum-") and . != "'"${BRANCH}"'") | .number'); do
+      --jq '.[] | select(.headRefName | startswith("pin-spm-checksum-") and . != "'"${BRANCH}"'") | [.number, .headRefName] | @tsv')" \
+    || { echo "::error::failed to list open pin PRs for superseding"; exit 1; }
+  # Supersede strictly-older open pin PRs and refuse when a strictly
+  # NEWER release's pin PR is still open (merging it after this one
+  # would rewind the pin). Close failures fail the run.
+  while IFS=$'\t' read -r old_pr old_branch; do
+    [ -n "${old_pr}" ] || continue
+    [ "${old_branch}" = "${BRANCH}" ] && continue
+    old_version="${old_branch#pin-spm-checksum-}"
+    if [ "${old_version}" = "${VERSION}" ]; then continue; fi
+    cmp_old="$(semver_cmp "${VERSION}" "${old_version}")"
+    if [[ ! "${cmp_old}" =~ ^-?[012]$ ]]; then
+      echo "::error::could not compare ${VERSION} against open pin PR #${old_pr} (${old_version})"
+      exit 1
+    fi
+    if [ "${cmp_old}" -le 0 ]; then
+      echo "::error::open pin PR #${old_pr} pins ${old_version} (>= ${VERSION}); close or merge it before releasing ${VERSION}"
+      exit 1
+    fi
     gh pr close "${old_pr}" \
-      --comment "Superseded for ${TAG}: an older pin must not merge after a newer one." || true
-  done
+      --comment "Superseded by #${existing_pr:-this run} for ${TAG}: an older pin must not merge after a newer one."
+    superseded="${superseded} #${old_pr}"
+  done << OLD_PRS
+${old_prs}
+OLD_PRS
+  [ -z "${superseded}" ] || echo "superseded older open pin PR(s):${superseded}"
 fi

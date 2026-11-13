@@ -4,8 +4,11 @@
 # pinned on the default branch (same-version repairs are manual: the
 # rewind guard in open-spm-pr.sh refuses to create them).
 #
-# Usage: check-pin-order.sh <BASE_BRANCH>   (run from the repo root, in
-# the PR checkout; LC_ALL=C is enforced internally).
+# Usage: check-pin-order.sh <BASE_BRANCH> [EXPECTED_TAG]
+# Run from the repo root in the PR checkout; LC_ALL=C is enforced
+# internally. With EXPECTED_TAG (derived by ci.yml from the reserved
+# bot branch name), strict mode additionally requires the PR head to
+# carry exactly that assignment and no other pin-bearing line.
 set -euo pipefail
 export LC_ALL=C
 
@@ -27,17 +30,24 @@ if [ -n "${EXPECTED_TAG}" ] && [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]
   exit 1
 fi
 
-normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
+normalized_in="$(strip_swift_comments "$(cat Package.swift 2>/dev/null)")" || {
+  echo "::error::cannot read Package.swift"
+  exit 1
+}
 # Strict mode when the expected tag is known (ci.yml derives it from
 # the reserved bot branch name): the normalized code must contain
 # exactly that assignment and NO other releaseTag- or checksum-bearing
 # line, so comment/nesting text tricks fail closed.
 if [ -n "${EXPECTED_TAG}" ]; then
   expected_lines="$(printf '%s\n' "${normalized_in}" | grep -cF -x -- "let releaseTag = \"${EXPECTED_TAG}\"" || true)"
-  release_tag_lines="$(printf '%s\n' "${normalized_in}" | grep -cE 'releaseTag' || true)"
-  checksum_lines="$(printf '%s\n' "${normalized_in}" | grep -cE 'checksum:' || true)"
-  if [ "${expected_lines}" != "1" ] || [ "${release_tag_lines}" != "1" ] || [ "${checksum_lines}" != "1" ]; then
-    echo "::error::PR head does not carry exactly the expected pin assignment for $(esc "${EXPECTED_TAG}") (ambiguous or missing)"
+  # Anchored counts: the URL line interpolates \(releaseTag), so a
+  # substring 'releaseTag' count would double-count the real shape.
+  release_tag_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^let releaseTag = ' || true)"
+  checksum_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "' || true)"
+  checksum_valid="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "[0-9a-f]{64}"$' || true)"
+  if [ "${expected_lines}" != "1" ] || [ "${release_tag_lines}" != "1" ] \
+    || [ "${checksum_lines}" != "1" ] || [ "${checksum_valid}" != "1" ]; then
+    echo "::error::PR head does not carry exactly the expected pin assignment for $(esc "${EXPECTED_TAG}") (ambiguous, missing, or non-hex checksum)"
     exit 1
   fi
 fi
@@ -84,7 +94,7 @@ fi
 # Only a strictly newer release advances the pin; equal or lower
 # (rewind or same-version repair) is refused at merge time.
 if [ "${cmp}" -le 0 ]; then
-  echo "::error::pin PR would not advance the release (incoming ${incoming_tag}, current ${current_tag})"
+  echo "::error::pin PR would not advance the release (incoming $(esc "${incoming_tag}"), current $(esc "${current_tag}"))"
   exit 1
 fi
-echo "pin order ok (incoming ${incoming_tag}, current ${current_tag})"
+echo "pin order ok (incoming $(esc "${incoming_tag}"), current $(esc "${current_tag}"))"

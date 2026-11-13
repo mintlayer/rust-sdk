@@ -65,7 +65,7 @@ if [ "${pin_tag}" = "${TAG}" ]; then
     exit 1
   fi
   if [ "${pin_sum}" = "${XCSUM}" ]; then
-    echo "release ${TAG} is already pinned on ${DEFAULT_BRANCH}; asset refresh is a no-op"
+    echo "rebuilt artifacts match the merged pin; asset refresh proceeds safely"
     exit 0
   fi
   echo "::error::rebuilt artifacts (checksum $(esc "${XCSUM}")) do not match the pin merged on $(esc "${DEFAULT_BRANCH}") ($(esc "${pin_sum}")); release assets left untouched - repair manually"

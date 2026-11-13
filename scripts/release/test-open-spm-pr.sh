@@ -624,6 +624,19 @@ if [ "${rc}" = "1" ]; then ok "pin order fails closed on git show error"; else b
 printf '0' > "${TMP}/show_fails"
 printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
 
+# 48a. Strict mode PASS path over the REAL root Package.swift shape:
+# header comment, the download URL interpolating \(releaseTag) (which a
+# substring 'releaseTag' count would double-count), releaseTag at
+# column 0, checksum indented 12 spaces.
+# shellcheck disable=SC2016  # \(releaseTag) is Swift interpolation, literal here
+printf '// SPM entry point for iOS consumers. The binary target is attached to the\n// `wallet-bindings-vX.Y.Z` GitHub release; its checksum is updated by the\n// release workflow.\n\nimport PackageDescription\n\nlet releaseTag = "wallet-bindings-v1.3.0"\nlet releaseBaseUrl = "https://github.com/mintlayer/rust-sdk/releases/download/\(releaseTag)"\nlet package = Package(\n    binaryTarget(\n            checksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${STUBS}/repo/Package.swift"
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "wallet-bindings-v1.3.0" >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "0" ]; then ok "strict mode passes the real Package.swift shape"; else bad "strict mode passes the real Package.swift shape" "exit ${rc}"; fi
+
 # 48. semver.sh unit checks (sourced directly).
 # shellcheck source=/dev/null
 semver_tests="${SCRIPT_DIR}/semver.sh"
