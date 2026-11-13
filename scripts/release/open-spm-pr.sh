@@ -51,7 +51,7 @@ if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
 fi
 # The default branch must never live in the reserved bot namespace: a
 # force-push there would rewind main instead of a disposable branch.
-if [[ "${DEFAULT_BRANCH}" == "${BRANCH}" || "${DEFAULT_BRANCH}" == pin-spm-checksum-* ]]; then
+if [[ "${DEFAULT_BRANCH}" == pin-spm-checksum-* ]]; then
   echo "::error::default branch must not use the reserved pin-spm-checksum-* namespace"
   exit 1
 fi
@@ -107,6 +107,20 @@ fi
 if git diff --quiet "origin/${DEFAULT_BRANCH}" -- Package.swift; then
   echo "checksum pin is already merged into ${DEFAULT_BRANCH}; nothing to do"
   exit 0
+fi
+# If the default branch carries an ACTIVE pin for a different release
+# (non-placeholder checksum, different tag), creating this PR would
+# rewind that pin; only the newest release may pin. Fail closed on
+# manual invocations for stale tags.
+origin_pin_tag="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
+  | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' \
+  | grep -oE 'v[0-9][^"]*' || true)"
+origin_pin_sum="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
+  | grep -oE 'checksum: "[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' || true)"
+if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ] \
+  && [ -n "${origin_pin_tag}" ] && [ "${origin_pin_tag}" != "v${VERSION}" ]; then
+  echo "::error::origin/${DEFAULT_BRANCH} already pins ${origin_pin_tag}; this script may only pin the newest release"
+  exit 1
 fi
 git commit -m "chore: pin the SPM checksum to ${TAG}"
 

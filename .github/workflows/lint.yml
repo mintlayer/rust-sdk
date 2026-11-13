@@ -22,8 +22,8 @@ jobs:
           # The job downloads and runs a third-party binary; keep the
           # token off disk like the release build jobs do.
           persist-credentials: false
-      - name: shellcheck release scripts
-        run: shellcheck scripts/release/*.sh
+      - name: shellcheck repo scripts
+        run: shellcheck $(git ls-files 'scripts/*.sh')
       - name: actionlint
         env:
           # SHA-256 of actionlint_1.7.7_linux_amd64.tar.gz, cross-checked

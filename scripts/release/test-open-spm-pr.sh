@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Unit tests for scripts/release/open-spm-pr.sh using stub git/gh on PATH.
-# Covers: tag-ancestry guard, both substitution verifications (pin fully
-# present / partially drifted / absent), owner/cross-repo/base-branch PR
-# detection, force-push ordering, and owner validation. Run by lint.yml
-# and locally before releases.
+# Covers: tag-ancestry guard (shallow-aware fetch both ways), HEAD==tag
+# guard, both substitution verifications (pin fully present / either half
+# drifted / absent), already-merged and pre-pinned short-circuits,
+# owner/cross-repo/base-branch/rewind PR detection, force-push ordering
+# and its absence on failure paths, owner/branch/checksum/tag validation,
+# and the byte-identical TAG regex across all copies. Run by lint.yml and
+# locally before releases.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,8 +40,9 @@ case "$1 $2" in
   "merge-base --is-ancestor") exit "$(cat "${CASE_DIR}/ancestry" 2>/dev/null || echo 1)" ;;
   "diff --cached") [ "$(cat "${CASE_DIR}/staged_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "diff --quiet") [ "$(cat "${CASE_DIR}/default_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
-  "rev-parse --is-shallow-repository") echo "false" ;;
-  "rev-parse HEAD") echo "git $*" >> "${LOG}"; cat "${CASE_DIR}/head_commit" ;;
+  "rev-parse --is-shallow-repository") cat "${CASE_DIR}/is_shallow" ;;
+  "rev-parse HEAD") cat "${CASE_DIR}/head_commit" ;;
+  "show origin/"*) cat "${CASE_DIR}/origin_swift" ;;
   rev-parse\ refs/tags/*) cat "${CASE_DIR}/tag_commit" ;;
   "checkout -B")
     cp "${CASE_DIR}/package_swift" "$(dirname "$0")/repo/Package.swift"
@@ -88,6 +92,8 @@ set_fixtures() {
   printf '%s' "${5:-1}" > "${TMP}/default_diff"
   printf 'tagcommitsha' > "${TMP}/head_commit"
   printf 'tagcommitsha' > "${TMP}/tag_commit"
+  printf 'false' > "${TMP}/is_shallow"
+  printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 }
 
 # assert_no_mutations: fail-closed cases must not push or open PRs.
@@ -262,6 +268,34 @@ run_case "invalid tag (wrong prefix) fails" 1 "mintlayer/rust-sdk" main "${XCSUM
 # 17. Default branch inside the reserved namespace -> fail closed.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "reserved-namespace default branch fails" 1 "mintlayer/rust-sdk" "pin-spm-checksum-1.2.3"
+assert_no_mutations
+
+# 18. Shallow clone -> the unshallow fetch is used.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'true' > "${TMP}/is_shallow"
+run_case "shallow clone unshallows" 0
+if grep -q -- "fetch --unshallow origin" <<< "${LOG_CONTENTS}"; then
+  ok "unshallow fetch issued"
+else
+  bad "unshallow fetch issued" "${LOG_CONTENTS}"
+fi
+printf 'false' > "${TMP}/is_shallow"
+
+# 19. Complete clone -> plain fetch with the explicit full refspec.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+run_case "complete clone plain fetch" 0
+if grep -q -- "fetch origin +refs/heads/main:refs/remotes/origin/main" <<< "${LOG_CONTENTS}"; then
+  ok "plain fetch carries the full refspec"
+else
+  bad "plain fetch carries the full refspec" "${LOG_CONTENTS}"
+fi
+
+# 20. Default branch already pins a DIFFERENT release -> fail closed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+run_case "stale tag against a newer pin fails" 1
+assert_no_mutations
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 assert_no_mutations
 
 # Static check: the TAG regex must be byte-identical in every copy
