@@ -173,14 +173,15 @@ tagged commit, attaches them with a `SHA256SUMS` manifest to the GitHub
 release, and then opens a pull request that pins the SPM checksum in the
 root `Package.swift` to the released artifact. The release exists before
 the pin PR is opened; a maintainer merges that pin PR to activate SPM
-resolution for the release. The `ci.yml` "Pin ordering" gate refuses any
-`Package.swift` change that is not a strictly-newer pin from the
-reserved `pin-spm-checksum-*` namespace, so other edits to that file
-require release-team coordination. Recommended hardening: protect the
-`pin-spm-checksum-*` branch namespace (restrict who may push it) so the
-bot pin PR's head cannot be rewritten after the release workflow opens
-it — bot pin PRs emit no pull_request CI events, so that protection is
-the merge-time control for them. Consumers never need a
+resolution for the release. The `ci.yml` "Pin ordering" gate runs on every pull_request or push
+that touches `Package.swift`: the gate code is checked out from the
+base branch (PR content cannot alter the enforcement logic), and a pin
+PR that does not advance the pinned release is refused — so other edits
+to `Package.swift` require release-team coordination. Recommended
+hardening: protect the `pin-spm-checksum-*` branch namespace (restrict
+who may push it) — bot pin PRs opened with the workflow token emit no
+pull_request CI events, so namespace protection plus the creation-time
+rewind guard are the controls for them. Consumers never need a
 Rust toolchain.
 The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded

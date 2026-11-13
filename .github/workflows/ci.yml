@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'pin-spm-checksum-**']
     paths-ignore: [".github/**"]
   pull_request:
     branches: [main]
@@ -32,14 +32,18 @@ jobs:
     env:
       LC_ALL: C
     steps:
+      # Check out the BASE ref: the gate code and the current pin state
+      # come from the trusted branch, never from PR-supplied content.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref }}
           fetch-depth: 0
           persist-credentials: false
       - name: Refuse a downgrading pin
         env:
           BASE_REF: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.repository.default_branch }}
           HEAD_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           # Single comparison implementation (scripts/release/semver.sh),
           # comment-stripped strict extraction, annotation-safe echoes —
@@ -52,9 +56,13 @@ jobs:
             echo "Package.swift untouched; nothing to check"
             exit 0
           fi
-          # Pin PRs must come from the reserved bot branch, which names
-          # the release it pins; the gate cross-checks the PR head's
-          # Package.swift against that tag (strict mode).
+          # The expected tag is derived from the reserved bot branch
+          # name (which names the release it pins) and cross-checked
+          # against the PR head's Package.swift (strict mode). NOTE: bot
+          # pin PRs opened with GITHUB_TOKEN do not emit pull_request
+          # events; they are enforced at creation time by the release
+          # workflow's rewind guard, which also supersedes older open
+          # pin PRs (no merge-order rewind).
           case "$HEAD_REF" in
             pin-spm-checksum-*)
               expected_tag="wallet-bindings-v${HEAD_REF#pin-spm-checksum-}"
@@ -64,18 +72,13 @@ jobs:
               exit 1
               ;;
           esac
-          # Branch names may contain '%': reject anything outside the
-          # tag charset before it reaches annotations or comparisons.
-          # NOTE: this pull_request gate covers human-opened pin PRs; a
-          # bot pin PR (opened with GITHUB_TOKEN) does not emit
-          # pull_request events, so it is enforced at creation time by
-          # the release workflow's rewind guard, which also supersedes
-          # older open pin PRs (no merge-order rewind).
           if [[ ! "$expected_tag" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::derived tag does not match wallet-bindings-v<semver>"
             exit 1
           fi
-          scripts/release/check-pin-order.sh "$BASE_REF" "$expected_tag"
+          # Gate code is the trusted base checkout; the PR head's
+          # Package.swift is consumed purely as data via its SHA.
+          scripts/release/check-pin-order.sh "$BASE_REF" "$expected_tag" "$HEAD_SHA"
 
   fmt:
     name: Format

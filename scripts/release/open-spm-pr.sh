@@ -187,7 +187,7 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi
-elif [ "$(semver_cmp "${VERSION}" "${origin_version}")" -le 0 ]; then
+elif { cmp="$(semver_cmp "${VERSION}" "${origin_version}")"; [[ "${cmp}" =~ ^-?[012]$ ]]; } && [ "${cmp}" -le 0 ]; then
   # A deactivated (zeroed-checksum) pin whose release marker is
   # newer-or-equal: main claims ${origin_version} with no active
   # checksum. Pinning ${VERSION} here would leave the marker and the

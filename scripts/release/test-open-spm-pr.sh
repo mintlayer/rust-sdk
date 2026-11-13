@@ -432,7 +432,7 @@ else
 fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 31. Build metadata is excluded from precedence: an origin pin of
+# 31. Origin pin 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
 # 32.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
 set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3+meta.a" // ...
 checksum: "'"${XCSUM}"'"' pr.none
@@ -540,7 +540,7 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 
 # 39. Comment decoys claiming THIS tag+checksum while the real code pin
 # differs -> comment stripping makes the script refuse (fail closed).
-printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+printf '/*\nchecksum: "1111111111111111111111111111111111111111111111111111111111111111"\nlet releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3 "1111111111111111111111111111111111111111111111111111111111111111" "${XCSUM}" main \
@@ -551,7 +551,7 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 
 # 40. Comment decoys claiming THIS tag+checksum while the real code pin
 # differs -> comment stripping makes the guard refuse (fail closed).
-printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+printf '/*\nchecksum: "1111111111111111111111111111111111111111111111111111111111111111"\nlet releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
   bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "1111111111111111111111111111111111111111111111111111111111111111" main \
@@ -604,21 +604,21 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3+meta"\nchecksum: "cad323bf1d59c
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
-  bash "${ORDER}" main >/dev/null 2>&1 )
+  bash "${ORDER}" main "wallet-bindings-v1.3.0" >/dev/null 2>&1 )
 rc=$?
 if [ "${rc}" = "0" ]; then ok "pin order allows upgrade"; else bad "pin order allows upgrade" "exit ${rc}"; fi
 
 printf 'let releaseTag = "wallet-bindings-v0.9.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
-  bash "${ORDER}" main >/dev/null 2>&1 )
+  bash "${ORDER}" main "wallet-bindings-v1.3.0" >/dev/null 2>&1 )
 rc=$?
 if [ "${rc}" = "1" ]; then ok "pin order refuses downgrade"; else bad "pin order refuses downgrade" "exit ${rc}"; fi
 
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
-  bash "${ORDER}" main >/dev/null 2>&1 )
+  bash "${ORDER}" main "wallet-bindings-v1.3.0" >/dev/null 2>&1 )
 rc=$?
 if [ "${rc}" = "1" ]; then ok "pin order refuses same version"; else bad "pin order refuses same version" "exit ${rc}"; fi
 
@@ -649,7 +649,7 @@ printf '1' > "${TMP}/show_fails"
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "${XCSUM}"\n' > "${STUBS}/repo/Package.swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
-  bash "${ORDER}" main >/dev/null 2>&1 )
+  bash "${ORDER}" main "wallet-bindings-v1.3.0" >/dev/null 2>&1 )
 rc=$?
 if [ "${rc}" = "1" ]; then ok "pin order fails closed on git show error"; else bad "pin order fails closed on git show error" "exit ${rc}"; fi
 printf '0' > "${TMP}/show_fails"

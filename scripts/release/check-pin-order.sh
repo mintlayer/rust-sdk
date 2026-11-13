@@ -19,7 +19,8 @@ source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 source "${BASH_SOURCE[0]%/*}/semver.sh"
 
 BASE_BRANCH="${1:?base branch required}"
-EXPECTED_TAG="${2:-}"
+EXPECTED_TAG="${2:?expected tag required}"
+INCOMING_REF="${3:-}"
 if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   || [[ "${BASE_BRANCH}" == pin-spm-checksum-* ]]; then
   echo "::error::unexpected base branch: $(esc "${BASE_BRANCH}")"
@@ -30,11 +31,20 @@ if [ -n "${EXPECTED_TAG}" ] && [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]
   exit 1
 fi
 
-if [ ! -r Package.swift ]; then
-  echo "::error::cannot read Package.swift"
-  exit 1
+# The incoming pin comes from the PR head SHA (workflow) or the working
+# tree (legacy/harness) — always consumed as data by this trusted code.
+if [ -n "${INCOMING_REF}" ]; then
+  normalized_in="$(strip_swift_comments "$(git show "${INCOMING_REF}:Package.swift" 2>/dev/null)")" || {
+    echo "::error::cannot read Package.swift from ${INCOMING_REF}"
+    exit 1
+  }
+else
+  if [ ! -r Package.swift ]; then
+    echo "::error::cannot read Package.swift"
+    exit 1
+  fi
+  normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
 fi
-normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
 # Strict mode when the expected tag is known (ci.yml derives it from
 # the reserved bot branch name): the normalized code must contain
 # exactly that assignment and NO other releaseTag- or checksum-bearing
