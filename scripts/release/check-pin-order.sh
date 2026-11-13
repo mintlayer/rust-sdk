@@ -46,27 +46,19 @@ else
   fi
   normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
 fi
-# Strict mode when the expected tag is known (ci.yml derives it from
-# the reserved bot branch name): the normalized code must contain
-# exactly that assignment and NO other releaseTag- or checksum-bearing
-# line, so comment/nesting text tricks fail closed.
-if [ -n "${EXPECTED_TAG}" ]; then
-  expected_lines="$(printf '%s\n' "${normalized_in}" | grep -cF -x -- "let releaseTag = \"${EXPECTED_TAG}\"" || true)"
-  # Anchored counts: the URL line interpolates \(releaseTag), so a
-  # substring 'releaseTag' count would double-count the real shape.
-  release_tag_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^let releaseTag = ' || true)"
-  checksum_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "' || true)"
-  checksum_valid="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "[0-9a-f]{64}"$' || true)"
-  if [ "${expected_lines}" != "1" ] || [ "${release_tag_lines}" != "1" ] \
-    || [ "${checksum_lines}" != "1" ] || [ "${checksum_valid}" != "1" ]; then
-    echo "::error::PR head does not carry exactly the expected pin assignment for $(esc "${EXPECTED_TAG}") (ambiguous, missing, or non-hex checksum)"
-    exit 1
-  fi
-fi
-incoming_matches="$(printf '%s\n' "${normalized_in}" \
-  | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
-if [ "${incoming_matches}" != "1" ]; then
-  echo "::error::expected exactly one releaseTag assignment on the PR head, found ${incoming_matches}"
+# Strict mode (EXPECTED_TAG is required; ci.yml derives it from the
+# reserved bot branch name): the normalized code must contain exactly
+# that assignment and NO other releaseTag- or checksum-bearing line,
+# so comment/nesting text tricks fail closed.
+expected_lines="$(printf '%s\n' "${normalized_in}" | grep -cF -x -- "let releaseTag = \"${EXPECTED_TAG}\"" || true)"
+# Anchored counts: the URL line interpolates \(releaseTag), so a
+# substring 'releaseTag' count would double-count the real shape.
+release_tag_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^let releaseTag = ' || true)"
+checksum_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "' || true)"
+checksum_valid="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "[0-9a-f]{64}"$' || true)"
+if [ "${expected_lines}" != "1" ] || [ "${release_tag_lines}" != "1" ] \
+  || [ "${checksum_lines}" != "1" ] || [ "${checksum_valid}" != "1" ]; then
+  echo "::error::PR head does not carry exactly the expected pin assignment for $(esc "${EXPECTED_TAG}") (ambiguous, missing, or non-hex checksum)"
   exit 1
 fi
 incoming_tag="$(printf '%s\n' "${normalized_in}" \

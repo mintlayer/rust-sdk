@@ -257,6 +257,10 @@ jobs:
           # rebuild is not bit-reproducible, clobbering would desync the
           # published artifacts from the merged checksum. Fail closed
           # before any public mutation; forward releases are unaffected.
+          # Its origin refresh needs a git credential helper (the
+          # checkout persists none) or private repositories would fail
+          # every release here.
+          gh auth setup-git
           scripts/release/guard-release-refresh.sh "$TAG" "$XCSUM" "$DEFAULT_BRANCH"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG already exists; refreshing assets"

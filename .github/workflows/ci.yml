@@ -84,7 +84,16 @@ jobs:
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head"
           fi
-          if ! git diff --name-only "origin/${BASE_REF}...${HEAD_SHA}" | grep -q '^Package.swift$'; then
+          # Fail closed on diff errors: an unreadable head (e.g. a
+          # force-push landing between event emission and the fetch)
+          # must not masquerade as "Package.swift untouched". The head
+          # fetch is anonymous, so private repositories fail closed
+          # here rather than silently skipping the gate.
+          if ! head_files="$(git diff --name-only "origin/${BASE_REF}...${HEAD_SHA}")"; then
+            echo "::error::cannot diff the incoming pin against origin/${BASE_REF}"
+            exit 1
+          fi
+          if ! printf '%s\n' "${head_files}" | grep -q '^Package.swift$'; then
             echo "Package.swift untouched; nothing to check"
             exit 0
           fi
