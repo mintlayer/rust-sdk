@@ -57,7 +57,11 @@ case "$1 $2" in
   "diff --quiet") [ "$(cat "${CASE_DIR}/default_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "rev-parse --is-shallow-repository") cat "${CASE_DIR}/is_shallow" ;;
   "rev-parse HEAD") cat "${CASE_DIR}/head_commit" ;;
-  "show origin/"*) cat "${CASE_DIR}/origin_swift" ;;
+  "show origin/"*)
+    if [ "$(cat "${CASE_DIR}/show_fails" 2>/dev/null || echo 0)" = "1" ]; then
+      exit 1
+    fi
+    cat "${CASE_DIR}/origin_swift" ;;
   rev-parse\ refs/tags/*) cat "${CASE_DIR}/tag_commit" ;;
   "checkout -B")
     cp "${CASE_DIR}/package_swift" "$(dirname "$0")/repo/Package.swift"
@@ -400,7 +404,8 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 
 # 29b. Build metadata is excluded from precedence: an origin pin of
 # 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
-set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3+meta.a" // ...
+checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3+meta.b"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
@@ -408,11 +413,14 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3+meta.b"\nchecksum: "aaf7197f472
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3+meta.a 1.2.3+meta.a "${XCSUM}" main \
     > "${OUT}" 2>&1 )
 rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "build-metadata equal precedence refused"; else bad "build-metadata equal precedence refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
 # 29c. Origin pin without metadata vs incoming with metadata: equal
 # precedence -> refuse.
+set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3+meta" // ...
+checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
@@ -420,13 +428,15 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3+meta 1.2.3+meta "${XCSUM}" main \
     > "${OUT}" 2>&1 )
 rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "metadata-suffix equal precedence refused"; else bad "metadata-suffix equal precedence refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
 # 29d. Huge numeric prerelease identifiers (20 digits) compare as
 # alphanumeric under the 18-digit cap: an origin pin of rc<20 digits>
 # still outranks incoming rc.2 -> refused, no arithmetic wrap.
-set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3-2" // ...
+checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3-18446744073709551617"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
@@ -434,6 +444,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3-18446744073709551617"\nchecksum
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3-2 1.2.3-2 "${XCSUM}" main \
     > "${OUT}" 2>&1 )
 rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "huge numeric prerelease refused without wrap"; else bad "huge numeric prerelease refused without wrap" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
@@ -471,6 +482,31 @@ rc=$?
 if [ "${rc}" = "0" ]; then ok "guard allows forward release"; else bad "guard allows forward release" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
+# 33b. git show fails -> open-spm-pr.sh fails closed (no silent skip).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf '1' > "${TMP}/show_fails"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "git show failure fails closed"; else bad "git show failure fails closed" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
+printf '0' > "${TMP}/show_fails"
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 33c. Comment decoys claiming THIS tag+checksum while the real code pin
+# differs -> comment stripping makes the script refuse (fail closed).
+printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 "1111111111111111111111111111111111111111111111111111111111111111" "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "script ignores comment decoys"; else bad "script ignores comment decoys" "exit ${rc}"; fi
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
 # 33. Comment decoys claiming THIS tag+checksum while the real code pin
 # differs -> comment stripping makes the guard refuse (fail closed).
 printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
@@ -481,6 +517,87 @@ printf '// checksum: "1111111111111111111111111111111111111111111111111111111111
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard ignores comment decoys"; else bad "guard ignores comment decoys" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 34. Guard: zero releaseTag assignments -> refuse.
+printf 'checksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "guard refuses zero assignments"; else bad "guard refuses zero assignments" "exit ${rc}"; fi
+
+# 35. Guard: two releaseTag assignments -> refuse.
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "guard refuses duplicate assignments"; else bad "guard refuses duplicate assignments" "exit ${rc}"; fi
+
+# 36. Guard: invalid checksum -> refuse.
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "nothex" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "guard rejects invalid checksum"; else bad "guard rejects invalid checksum" "exit ${rc}"; fi
+
+# 37. Guard: git show failure -> fail closed.
+printf '1' > "${TMP}/show_fails"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "guard fails closed on git show failure"; else bad "guard fails closed on git show failure" "exit ${rc}"; fi
+printf '0' > "${TMP}/show_fails"
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 38. Pin-order script: upgrade allows, downgrade refuses, same refuses.
+ORDER="${SCRIPT_DIR}/check-pin-order.sh"
+printf 'let releaseTag = "wallet-bindings-v1.2.3+meta"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "0" ]; then ok "pin order allows upgrade"; else bad "pin order allows upgrade" "exit ${rc}"; fi
+
+printf 'let releaseTag = "wallet-bindings-v0.9.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "pin order refuses downgrade"; else bad "pin order refuses downgrade" "exit ${rc}"; fi
+
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "pin order refuses same version"; else bad "pin order refuses same version" "exit ${rc}"; fi
+printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
+
+# 39. semver.sh unit checks (sourced directly).
+# shellcheck source=/dev/null
+semver_tests="${SCRIPT_DIR}/semver.sh"
+semver_cmp_check() {
+  # shellcheck disable=SC1090  # semver.sh is linted directly
+  ( source "${semver_tests}"; semver_cmp "$1" "$2" )
+}
+if [ "$(semver_cmp_check "1.2.3" "1.2.3-rc.1")" = "1" ] \
+  && [ "$(semver_cmp_check "1.2.3-rc.1" "1.2.3")" = "-1" ] \
+  && [ "$(semver_cmp_check "1.2.3+meta.a" "1.2.3+meta.b")" = "0" ] \
+  && [ "$(semver_cmp_check "1.2.3" "1.2.3+meta")" = "0" ] \
+  && [ "$(semver_cmp_check "1.2.3-2" "1.2.3-18446744073709551617")" = "-1" ] \
+  && [ "$(semver_cmp_check "1.02.3" "1.2.3")" = "0" ]; then
+  ok "semver comparator unit checks"
+else
+  bad "semver comparator unit checks" "unexpected comparator output"
+fi
 
 # Static check: the TAG regex must be byte-identical in every copy
 # (three occurrences in release.yml, one in the script under test).

@@ -204,8 +204,10 @@ jobs:
             Package.swift
           # Both substitutions must actually land; a no-op sed on a drifted
           # Package.swift must fail the release rather than skip the pin.
-          pin_tag_lines="$(grep -cE "^[[:space:]]*let releaseTag = \"$TAG\"[[:space:]]*(//.*)?$" Package.swift || true)"
-          pin_sum_lines="$(grep -cE "^[[:space:]]*checksum: \"$xcsum\"[[:space:]]*(//.*)?$" Package.swift || true)"
+          # Fixed strings, not EREs: build-metadata tags contain '+',
+          # which an interpolated pattern would treat as a quantifier.
+          pin_tag_lines="$(sed 's#//.*$##' Package.swift | sed 's/[[:space:]]*$//' | grep -cF -x -- "let releaseTag = \"$TAG\"" || true)"
+          pin_sum_lines="$(sed 's#//.*$##' Package.swift | sed 's/[[:space:]]*$//' | grep -cF -x -- "checksum: \"$xcsum\"" || true)"
           if [ "$pin_tag_lines" != "1" ] || [ "$pin_sum_lines" != "1" ]; then
             echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
             exit 1

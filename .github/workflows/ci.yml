@@ -21,32 +21,32 @@ jobs:
   # touching Package.swift; branch protection can require it.
   pin-order:
     name: Pin ordering
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      LC_ALL: C
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Refuse a downgrading pin
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          changed="$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -c '^Package.swift$' || true)"
-          if [ "$changed" = "0" ]; then
+          # Single comparison implementation (scripts/release/semver.sh),
+          # comment-stripped exactly-one extraction, annotation-safe
+          # echoes — shared with the release scripts.
+          if [[ ! "$BASE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+            echo "::error::unexpected base branch"
+            exit 1
+          fi
+          if ! git diff --name-only "origin/${BASE_REF}...HEAD" | grep -q '^Package.swift$'; then
             echo "Package.swift untouched; nothing to check"
             exit 0
           fi
-          incoming="$(grep -oE 'let releaseTag = "wallet-bindings-v[0-9.]+[^"]*"' Package.swift | grep -oE '[0-9][^"]*' || true)"
-          current="$(git show "origin/${{ github.base_ref }}:Package.swift" \
-            | grep -oE 'let releaseTag = "wallet-bindings-v[0-9.]+[^"]*"' | grep -oE '[0-9][^"]*' || true)"
-          if [ -z "$incoming" ]; then
-            echo "::error::pin PR carries no parsable releaseTag"
-            exit 1
-          fi
-          if [ -n "$current" ] \
-            && [ "$(printf '%s\n%s\n' "$incoming" "$current" | sort -V | head -1)" != "$incoming" ]; then
-            echo "::error::pin PR would downgrade the release from $current to $incoming"
-            exit 1
-          fi
-          echo "pin order ok (incoming $incoming, current ${current:-none})"
+          scripts/release/check-pin-order.sh "$BASE_REF"
 
   fmt:
     name: Format

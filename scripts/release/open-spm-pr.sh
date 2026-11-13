@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # LC_ALL=C pins collation for the semver string comparisons below.
 export LC_ALL=C
+
+# Shared semver precedence comparator (single source of truth, also
+# used by check-pin-order.sh).
+# shellcheck disable=SC1091  # sourced next to this file, linted directly
+source "${BASH_SOURCE[0]%/*}/semver.sh"
 # Open (or reuse) the SPM checksum-pin pull request for a release tag.
 #
 # Branch protection on the default branch rejects direct pushes (GH013),
@@ -29,7 +34,7 @@ esc() {
   # Strip C0 control bytes (incl. ESC) so extracted repo content cannot
   # spoof the log with terminal escapes, then %-escape the rest.
   local s
-  s="$(printf '%s' "$1" | tr -d '\000-\037\177')"
+  s="$(printf '%s' "$1" | tr -d '\000-\037\177\200-\377')"
   s="${s//%/%25}"
   s="${s//$'\r'/%0D}"
   s="${s//$'\n'/%0A}"
@@ -117,10 +122,13 @@ git checkout -B "${BRANCH}"
 git add Package.swift
 # Both substitutions must be present, on every path: anything else means
 # the sed no-op'd or corrupted the file; fail closed.
-# Anchored, exactly-once verification: substring greps would also match
-# a drifted assignment plus a comment carrying the canonical literal.
-pin_tag_lines="$(grep -cE "^[[:space:]]*let releaseTag = \"${TAG}\"[[:space:]]*(//.*)?$" Package.swift || true)"
-pin_sum_lines="$(grep -cE "^[[:space:]]*checksum: \"${XCSUM}\"[[:space:]]*(//.*)?$" Package.swift || true)"
+# Anchored, exactly-once verification with fixed strings (TAG may
+# contain ERE metacharacters such as '+'): strip comments and trailing
+# whitespace, then count whole-line matches.
+expected_tag_line="let releaseTag = \"${TAG}\""
+expected_sum_line="checksum: \"${XCSUM}\""
+pin_tag_lines="$(sed 's#//.*$##' Package.swift | sed 's/[[:space:]]*$//' | grep -cF -x -- "${expected_tag_line}" || true)"
+pin_sum_lines="$(sed 's#//.*$##' Package.swift | sed 's/[[:space:]]*$//' | grep -cF -x -- "${expected_sum_line}" || true)"
 if [ "${pin_tag_lines}" != "1" ] || [ "${pin_sum_lines}" != "1" ]; then
   echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
   exit 1
@@ -145,9 +153,16 @@ fi
 # active pins are the normal forward-release state and proceed.
 origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" \
   || { echo "::error::cannot read origin/${DEFAULT_BRANCH}:Package.swift"; exit 1; }
-# Only real code lines constitute the pin: comment lines are ignored so
-# a decoy literal in a comment cannot flip the guard's verdict.
+# Only real code lines constitute the pin: block comments, line
+# comments, and their decoy literals are all ignored.
+origin_swift="$(printf '%s' "${origin_swift}" | perl -0777 -pe 's{\Q/*\E.*?\*/}{}gs')"
 origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//' || true)"
+tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v' || true)"
+sum_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "' || true)"
+if [ "${tag_assignments}" != "1" ] || [ "${sum_assignments}" != "1" ]; then
+  echo "::error::origin/${DEFAULT_BRANCH} carries ${tag_assignments} releaseTag and ${sum_assignments} checksum assignments; expected exactly one of each"
+  exit 1
+fi
 origin_pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' \
   | grep -oE 'v[0-9][^"]*' || true)"
@@ -167,59 +182,6 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
     exit 1
   fi
-  # Semver precedence: numeric triple (10# forces decimal, so leading
-  # zeros cannot octal-flip the verdict), then identifier-wise
-  # pre-release comparison (a pre-release is less than the final;
-  # numeric identifiers are lower than alphanumeric; fewer identifiers
-  # are lower).
-  semver_prerelease_cmp() { # <0 if $1 < $2, 0 equal, >0 if $1 > $2
-    # A final release outranks any pre-release of the same triple.
-    if [ -z "$1" ] && [ -n "$2" ]; then echo 1; return; fi
-    if [ -n "$1" ] && [ -z "$2" ]; then echo -1; return; fi
-    if [ -z "$1" ] && [ -z "$2" ]; then echo 0; return; fi
-    local -a A B
-    IFS='.' read -ra A <<< "${1}"
-    IFS='.' read -ra B <<< "${2}"
-    local i n
-    n=$(( ${#A[@]} > ${#B[@]} ? ${#A[@]} : ${#B[@]} ))
-    for ((i = 0; i < n; i++)); do
-      local x="${A[i]:-}" y="${B[i]:-}"
-      if [ -z "${x}" ] && [ -z "${y}" ]; then continue; fi
-      if [ -z "${x}" ]; then echo -1; return; fi
-      if [ -z "${y}" ]; then echo 1; return; fi
-      if [[ "${x}" =~ ^[0-9]{1,18}$ ]] && [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
-        [ "$((10#${x}))" -lt "$((10#${y}))" ] && { echo -1; return; }
-        [ "$((10#${x}))" -gt "$((10#${y}))" ] && { echo 1; return; }
-      elif [[ "${x}" =~ ^[0-9]{1,18}$ ]]; then
-        echo -1; return
-      elif [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
-        echo 1; return
-      elif [[ "${x}" < "${y}" ]]; then
-        echo -1; return
-      elif [[ "${x}" > "${y}" ]]; then
-        echo 1; return
-      fi
-    done
-    echo 0
-  }
-  semver_cmp() { # <0 if $1 < $2, 0 if equal, >0 if $1 > $2
-    local a="${1%%-*}" b="${2%%-*}"
-    local ap="" bp=""
-    [[ "$1" == *-* ]] && ap="${1#*-}"
-    [[ "$2" == *-* ]] && bp="${2#*-}"
-    # Build metadata is excluded from precedence: strip it from both.
-    ap="${ap%%+*}"
-    bp="${bp%%+*}"
-    local -a A B
-    read -ra A <<< "${a//[^0-9]/ }"
-    read -ra B <<< "${b//[^0-9]/ }"
-    local i
-    for i in 0 1 2; do
-      [ "$((10#${A[i]:-0}))" -lt "$((10#${B[i]:-0}))" ] && { echo -1; return; }
-      [ "$((10#${A[i]:-0}))" -gt "$((10#${B[i]:-0}))" ] && { echo 1; return; }
-    done
-    semver_prerelease_cmp "${ap}" "${bp}"
-  }
   cmp="$(semver_cmp "${VERSION}" "${origin_version}")"
   if [[ ! "${cmp}" =~ ^-?[012]$ ]]; then
     echo "::error::semver comparison failed for ${VERSION} against ${origin_version}"

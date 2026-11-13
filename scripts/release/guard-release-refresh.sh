@@ -17,7 +17,7 @@ DEFAULT_BRANCH="${3:?DEFAULT_BRANCH required}"
 
 esc() {
   local s
-  s="$(printf '%s' "$1" | tr -d '\000-\037\177')"
+  s="$(printf '%s' "$1" | tr -d '\000-\037\177\200-\377')"
   s="${s//%/%25}"
   s="${s//$'\r'/%0D}"
   s="${s//$'\n'/%0A}"
@@ -43,7 +43,11 @@ origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" 
   || { echo "::error::cannot read origin/${DEFAULT_BRANCH}:Package.swift"; exit 1; }
 # Only real code lines constitute the pin: comment lines are ignored so
 # a decoy literal in a comment cannot flip the guard's verdict.
-origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//')"
+origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//' || true)"
+if [ -z "${origin_code}" ]; then
+  echo "::error::origin/${DEFAULT_BRANCH}:Package.swift carries no code lines"
+  exit 1
+fi
 
 pin_tag_matches="$(printf '%s\n' "${origin_code}" \
   | grep -cE '^[[:space:]]*let releaseTag = "wallet-bindings-v[^"]*"$' || true)"

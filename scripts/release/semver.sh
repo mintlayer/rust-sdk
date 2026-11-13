@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Shared semver precedence comparator. Sourced by open-spm-pr.sh and
+# check-pin-order.sh so every pin-order verdict uses one implementation.
+# Requires LC_ALL=C for the raw-byte identifier comparisons.
+
+# semver_prerelease_cmp <a> <b>: identifier-wise compare of the
+# pre-release parts (without the leading '-'). A final release outranks
+# any pre-release of the same triple (the empty part is the final).
+semver_prerelease_cmp() { # <0 if $1 < $2, 0 equal, >0 if $1 > $2
+  if [ -z "$1" ] && [ -n "$2" ]; then echo 1; return; fi
+  if [ -n "$1" ] && [ -z "$2" ]; then echo -1; return; fi
+  if [ -z "$1" ] && [ -z "$2" ]; then echo 0; return; fi
+  local -a A B
+  IFS='.' read -ra A <<< "${1}"
+  IFS='.' read -ra B <<< "${2}"
+  local i n
+  n=$(( ${#A[@]} > ${#B[@]} ? ${#A[@]} : ${#B[@]} ))
+  for ((i = 0; i < n; i++)); do
+    local x="${A[i]:-}" y="${B[i]:-}"
+    if [ -z "${x}" ] && [ -z "${y}" ]; then continue; fi
+    if [ -z "${x}" ]; then echo -1; return; fi
+    if [ -z "${y}" ]; then echo 1; return; fi
+    # Numeric identifiers are lower than alphanumeric ones; numerics
+    # are digit-capped at 18 by the callers' validation regexes, so the
+    # decimal arithmetic cannot overflow.
+    if [[ "${x}" =~ ^[0-9]{1,18}$ ]] && [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
+      [ "$((10#${x}))" -lt "$((10#${y}))" ] && { echo -1; return; }
+      [ "$((10#${x}))" -gt "$((10#${y}))" ] && { echo 1; return; }
+    elif [[ "${x}" =~ ^[0-9]{1,18}$ ]]; then
+      echo -1; return
+    elif [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
+      echo 1; return
+    elif [[ "${x}" < "${y}" ]]; then
+      echo -1; return
+    elif [[ "${x}" > "${y}" ]]; then
+      echo 1; return
+    fi
+  done
+  echo 0
+}
+
+# semver_cmp <a> <b>: echoes -1|0|1 per semver precedence. Build
+# metadata (+suffix) is excluded from precedence.
+semver_cmp() { # <0 if $1 < $2, 0 if equal, >0 if $1 > $2
+  local a="${1%%-*}" b="${2%%-*}"
+  local ap="" bp=""
+  [[ "$1" == *-* ]] && ap="${1#*-}"
+  [[ "$2" == *-* ]] && bp="${2#*-}"
+  # Build metadata is excluded from precedence: strip it from both.
+  ap="${ap%%+*}"
+  bp="${bp%%+*}"
+  local -a A B
+  read -ra A <<< "${a//[^0-9]/ }"
+  read -ra B <<< "${b//[^0-9]/ }"
+  local i
+  for i in 0 1 2; do
+    [ "$((10#${A[i]:-0}))" -lt "$((10#${B[i]:-0}))" ] && { echo -1; return; }
+    [ "$((10#${A[i]:-0}))" -gt "$((10#${B[i]:-0}))" ] && { echo 1; return; }
+  done
+  semver_prerelease_cmp "${ap}" "${bp}"
+}
