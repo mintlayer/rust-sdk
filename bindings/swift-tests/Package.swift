@@ -16,7 +16,7 @@ import PackageDescription
 let package = Package(
     name: "MintlayerWalletBindingsTests",
     platforms: [
-        .iOS(.v15)
+        .iOS(.v15_1)
     ],
     products: [
         .library(
@@ -36,7 +36,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AcceptanceTests",
-            dependencies: ["MintlayerWalletBindingsSwift"],
+            dependencies: ["MintlayerWalletBindings"],
             path: "Tests"
         )
     ]
