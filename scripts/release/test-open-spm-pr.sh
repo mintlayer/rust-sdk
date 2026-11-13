@@ -81,6 +81,20 @@ if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
     prev="$a"
   done
   printf '%s' "${payload}" | jq -r "${prog}"
+  exit $?
+fi
+# pr close/create must reference a numeric PR (real gh rejects garbage).
+if [ "$1" = "pr" ] && { [ "$2" = "close" ] || [ "$2" = "create" ]; }; then
+  for a in "$@"; do
+    if [[ "${a}" =~ ^[0-9]+$ ]]; then
+      exit 0
+    fi
+    if [[ "${a}" == --head* || "${a}" == --base* || "${a}" == --title* || "${a}" == --body* ]]; then
+      exit 0
+    fi
+  done
+  echo "gh: refusing non-numeric PR argument" >&2
+  exit 1
 fi
 exit 0
 EOF
@@ -96,10 +110,12 @@ NOT_PINNED='let releaseTag = "wallet-bindings-v9.9.9"
 
 # PR fixtures; baseRefName is main unless stated.
 echo '[]' > "${TMP}/pr.none"
-echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.own"
-echo '[{"number": 9, "headRepositoryOwner": {"login": "evil"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.evillow"
-echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": true, "baseRefName": "main"}]' > "${TMP}/pr.fork"
-echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "develop"}]' > "${TMP}/pr.wrongbase"
+echo '[{"number": 7, "headRefName": "pin-spm-checksum-1.2.3", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.own"
+echo '[{"number": 9, "headRefName": "pin-spm-checksum-1.2.3", "headRepositoryOwner": {"login": "evil"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.evillow"
+echo '[{"number": 9, "headRefName": "pin-spm-checksum-1.2.3", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": true, "baseRefName": "main"}]' > "${TMP}/pr.fork"
+echo '[{"number": 9, "headRefName": "pin-spm-checksum-1.2.3", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "develop"}]' > "${TMP}/pr.wrongbase"
+echo '[{"number": 5, "headRefName": "pin-spm-checksum-0.0.9", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_older"
+echo '[{"number": 6, "headRefName": "pin-spm-checksum-9.9.9", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_newer"
 
 # set_fixtures <ancestry> <staged_diff> <package_swift> <existing_pr> [default_diff]
 # default_diff: 0 = Package.swift identical to the default branch (pin merged).
@@ -156,7 +172,16 @@ assert_no_mutations
 
 # 2. Ancestor + real diff -> success; push issued before create.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
-run_case "diff present creates PR" 0
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+echo "CASE2 rc=${rc} OUT=[$(cat "${OUT}")]"
+LOG_CONTENTS="$(cat "${LOG}")"
+echo "CASE2 LOG:"; printf '%s\n' "${LOG_CONTENTS}" | tail -5
+if [ "${rc}" = "0" ]; then ok "case2 exit 0"; else bad "case2 exit" "rc=${rc}"; fi
 if grep -q -- "push --force origin pin-spm-checksum-1.2.3" <<< "${LOG_CONTENTS}"; then
   ok "force-push issued"
 else
@@ -636,6 +661,35 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e
   bash "${ORDER}" main "wallet-bindings-v1.3.0" >/dev/null 2>&1 )
 rc=$?
 if [ "${rc}" = "0" ]; then ok "strict mode passes the real Package.swift shape"; else bad "strict mode passes the real Package.swift shape" "exit ${rc}"; fi
+
+# 48b. Supersede: an older stale pin PR is closed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_older
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "0" ] && grep -q -- "pr close 5" "${LOG}"; then
+  ok "supersede closes the older stale pin PR"
+else
+  bad "supersede closes the older stale pin PR" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# 48c. Supersede: a newer open pin PR refuses the run.
+cp "${TMP}/pr.stale_newer" "${TMP}/existing_pr"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ] && grep -q "9.9.9" <<< "$(cat "${OUT}")"; then
+  ok "supersede refuses a newer open pin PR"
+else
+  bad "supersede refuses a newer open pin PR" "exit ${rc}: $(cat "${OUT}")"
+fi
 
 # 48. semver.sh unit checks (sourced directly).
 # shellcheck source=/dev/null

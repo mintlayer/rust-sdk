@@ -207,6 +207,13 @@ existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
 # order). Runs on both the create and reuse paths. Close failures fail
 # the run - a stale open pin PR is a rewind hazard.
 superseded=""
+# Same trust filters as the existing_pr lookup: fork PRs, same-owner
+# cross-repo PRs, and PRs against a non-default base never constrain
+# this run even when their branch names collide with the namespace.
+old_prs="$(gh pr list --state open --paginate \
+  --json number,headRefName,headRepositoryOwner,isCrossRepository,baseRefName \
+  --jq ".[] | select(.headRefName | startswith(\"pin-spm-checksum-\") and .headRefName != \"${BRANCH}\" and .headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\") | [.number, .headRefName] | @tsv")" \
+  || { echo "::error::failed to list open pin PRs for superseding"; exit 1; }
 while IFS=$'\t' read -r old_pr old_branch; do
   [ -n "${old_pr}" ] || continue
   [ "${old_branch}" = "${BRANCH}" ] && continue
@@ -214,23 +221,18 @@ while IFS=$'\t' read -r old_pr old_branch; do
   if [ "${old_version}" = "${VERSION}" ]; then continue; fi
   cmp_old="$(semver_cmp "${VERSION}" "${old_version}")"
   if [[ ! "${cmp_old}" =~ ^-?[012]$ ]]; then
-    echo "::error::could not compare ${VERSION} against open pin PR #${old_pr} (${old_version})"
+    echo "::error::could not compare ${VERSION} against open pin PR #${old_pr} ($(esc "${old_version}"))"
     exit 1
   fi
   if [ "${cmp_old}" -le 0 ]; then
-    echo "::error::open pin PR #${old_pr} pins ${old_version} (>= ${VERSION}); close or merge it before releasing ${VERSION}"
+    echo "::error::open pin PR #${old_pr} pins $(esc "${old_version}") (>= ${VERSION}); close or merge it before releasing ${VERSION}"
     exit 1
   fi
   gh pr close "${old_pr}" \
     --comment "Superseded by #${existing_pr:-this run} for ${TAG}: an older pin must not merge after a newer one."
   superseded="${superseded} #${old_pr}"
 done << OLD_PRS
-$(gh pr list --state open --paginate --limit 500 \
-    --json number,headRefName \
-    --jq '.[] | select(.headRefName | startswith("pin-spm-checksum-") and . != "'"${BRANCH}"'") | [.number, .headRefName] | @tsv') || {
-  echo "::error::failed to list open pin PRs for superseding"
-  exit 1
-}
+${old_prs}
 OLD_PRS
 [ -z "${superseded}" ] || echo "superseded older open pin PR(s):${superseded}"
 
@@ -253,36 +255,4 @@ Checksum: \`${XCSUM}\`
 
 The GitHub release for this tag is published before this PR is opened.
 Merge to activate."
-  # Supersede strictly-older open pin PRs and refuse when a strictly
-  # NEWER release's pin PR is still open (merging it after this one
-  # would rewind the pin). Runs on both the create and reuse paths;
-  # close failures fail the run - a stale open pin PR is a rewind hazard.
-  old_prs="$(gh pr list --state open --paginate --limit 500 \
-      --json number,headRefName \
-      --jq '.[] | select(.headRefName | startswith("pin-spm-checksum-") and . != "'"${BRANCH}"'") | [.number, .headRefName] | @tsv')" \
-    || { echo "::error::failed to list open pin PRs for superseding"; exit 1; }
-  # Supersede strictly-older open pin PRs and refuse when a strictly
-  # NEWER release's pin PR is still open (merging it after this one
-  # would rewind the pin). Close failures fail the run.
-  while IFS=$'\t' read -r old_pr old_branch; do
-    [ -n "${old_pr}" ] || continue
-    [ "${old_branch}" = "${BRANCH}" ] && continue
-    old_version="${old_branch#pin-spm-checksum-}"
-    if [ "${old_version}" = "${VERSION}" ]; then continue; fi
-    cmp_old="$(semver_cmp "${VERSION}" "${old_version}")"
-    if [[ ! "${cmp_old}" =~ ^-?[012]$ ]]; then
-      echo "::error::could not compare ${VERSION} against open pin PR #${old_pr} (${old_version})"
-      exit 1
-    fi
-    if [ "${cmp_old}" -le 0 ]; then
-      echo "::error::open pin PR #${old_pr} pins ${old_version} (>= ${VERSION}); close or merge it before releasing ${VERSION}"
-      exit 1
-    fi
-    gh pr close "${old_pr}" \
-      --comment "Superseded by #${existing_pr:-this run} for ${TAG}: an older pin must not merge after a newer one."
-    superseded="${superseded} #${old_pr}"
-  done << OLD_PRS
-${old_prs}
-OLD_PRS
-  [ -z "${superseded}" ] || echo "superseded older open pin PR(s):${superseded}"
 fi
