@@ -9,35 +9,23 @@
 set -euo pipefail
 export LC_ALL=C
 
-BASE_BRANCH="${1:?base branch required}"
-if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
-  echo "::error::unexpected base branch: ${BASE_BRANCH}"
-  exit 1
-fi
-
-esc() {
-  # Strip control and non-ASCII bytes (pin tags are ASCII), then
-  # %-escape for workflow-command safety.
-  local s
-  s="$(printf '%s' "$1" | tr -d '\000-\037\177\200-\377')"
-  s="${s//%/%25}"
-  printf '%s' "$s"
-}
-
+# Shared helpers (esc, comment stripping) and the semver comparator.
+# shellcheck disable=SC1091  # sourced next to this file, linted directly
+source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 # shellcheck disable=SC1091  # sourced next to this file, linted directly
 source "${BASH_SOURCE[0]%/*}/semver.sh"
 
-# Anchored, comment-stripped, exactly-one extraction — the same shape
-# the release scripts use on the default branch.
-strip_comments() { sed 's#//.*$##'; }
+BASE_BRANCH="${1:?base branch required}"
+# shellcheck disable=SC1091  # sourced next to this file, linted directly
+source "${BASH_SOURCE[0]%/*}/semver.sh"
 
-incoming_matches="$(strip_comments < Package.swift \
+incoming_matches="$(strip_swift_comments "$(cat Package.swift)" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
 if [ "${incoming_matches}" != "1" ]; then
   echo "::error::expected exactly one releaseTag assignment on the PR head, found ${incoming_matches}"
   exit 1
 fi
-incoming_tag="$(strip_comments < Package.swift \
+incoming_tag="$(strip_swift_comments "$(cat Package.swift)" \
   | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
 incoming_version="${incoming_tag#wallet-bindings-v}"
 if [[ ! "${incoming_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
@@ -47,7 +35,7 @@ fi
 
 origin_swift="$(git show "origin/${BASE_BRANCH}:Package.swift" 2>/dev/null)" \
   || { echo "::error::cannot read origin/${BASE_BRANCH}:Package.swift"; exit 1; }
-origin_code="$(printf '%s\n' "${origin_swift}" | strip_comments)"
+origin_code="$(strip_swift_comments "${origin_swift}")"
 current_matches="$(printf '%s\n' "${origin_code}" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
 if [ "${current_matches}" = "0" ]; then

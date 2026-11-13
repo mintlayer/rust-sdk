@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # LC_ALL=C pins collation for the ASCII-range validations below.
 export LC_ALL=C
+
+# Shared helpers (esc, comment stripping).
+# shellcheck disable=SC1091  # sourced next to this file, linted directly
+source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 # Refuse to clobber published release assets when the default branch
 # already pins THIS release and the rebuilt artifacts are not
 # bit-reproducible: publishing mismatched artifacts would desync SPM
@@ -14,15 +18,6 @@ set -euo pipefail
 TAG="${1:?TAG required}"
 XCSUM="${2:?XCSUM required}"
 DEFAULT_BRANCH="${3:?DEFAULT_BRANCH required}"
-
-esc() {
-  local s
-  s="$(printf '%s' "$1" | tr -d '\000-\037\177\200-\377')"
-  s="${s//%/%25}"
-  s="${s//$'\r'/%0D}"
-  s="${s//$'\n'/%0A}"
-  printf '%s' "$s"
-}
 
 # Mirror the workflow's validation so direct invocations fail closed.
 if [[ ! "${TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
@@ -39,36 +34,39 @@ if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   exit 1
 fi
 
+# Only real code lines constitute the pin: block comments, line
+# comments, and their decoy literals are all ignored (shared stripper).
 origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" \
   || { echo "::error::cannot read origin/${DEFAULT_BRANCH}:Package.swift"; exit 1; }
-# Only real code lines constitute the pin: comment lines are ignored so
-# a decoy literal in a comment cannot flip the guard's verdict.
-origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//' || true)"
+origin_code="$(strip_swift_comments "${origin_swift}")"
 if [ -z "${origin_code}" ]; then
   echo "::error::origin/${DEFAULT_BRANCH}:Package.swift carries no code lines"
   exit 1
 fi
 
-pin_tag_matches="$(printf '%s\n' "${origin_code}" \
-  | grep -cE '^[[:space:]]*let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
-if [ "${pin_tag_matches}" != "1" ]; then
-  echo "::error::expected exactly one releaseTag assignment on ${DEFAULT_BRANCH}, found ${pin_tag_matches}"
+# Exactly one releaseTag and one checksum assignment must exist (any
+# version); anything else is a mangled pin state -> fail closed.
+tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v' || true)"
+checksum_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "' || true)"
+if [ "${tag_assignments}" != "1" ] || [ "${checksum_assignments}" != "1" ]; then
+  echo "::error::origin/${DEFAULT_BRANCH} carries ${tag_assignments} releaseTag and ${checksum_assignments} checksum assignments; expected exactly one of each"
   exit 1
 fi
-pin_sum_matches="$(printf '%s\n' "${origin_code}" \
-  | grep -cE '^[[:space:]]*checksum: "[0-9a-f]{64}"$' || true)"
-if [ "${pin_sum_matches}" != "1" ]; then
-  echo "::error::expected exactly one checksum assignment on ${DEFAULT_BRANCH}, found ${pin_sum_matches}"
-  exit 1
-fi
+# Fixed-string whole-line comparison (TAG may contain ERE metacharacters
+# such as '+').
 pin_tag="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^[[:space:]]*let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
+  | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
 pin_sum="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^[[:space:]]*checksum: ' | grep -oE '[0-9a-f]{64}')"
-
-# Only a pin for THIS release constrains the refresh; identical
-# checksums make the refresh a harmless no-op.
-if [ "${pin_tag}" = "${TAG}" ] && [ "${pin_sum}" != "${XCSUM}" ]; then
+  | grep -E '^checksum: ' | grep -oE '[0-9a-f]{64}')"
+if [ "${pin_tag}" = "${TAG}" ]; then
+  if [ "${pin_sum}" = "${XCSUM}" ]; then
+    echo "release ${TAG} is already pinned on ${DEFAULT_BRANCH}; asset refresh is a no-op"
+    exit 0
+  fi
   echo "::error::rebuilt artifacts (checksum $(esc "${XCSUM}")) do not match the pin merged on $(esc "${DEFAULT_BRANCH}") ($(esc "${pin_sum}")); release assets left untouched - repair manually"
   exit 1
 fi
+# A pin for a DIFFERENT release is the normal forward-release state:
+# open-spm-pr.sh refuses to create rewind pin PRs, so no pin constrains
+# this tag and the asset refresh is safe.
+echo "no pin for ${TAG} on ${DEFAULT_BRANCH}; asset refresh allowed"

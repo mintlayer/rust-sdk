@@ -262,13 +262,18 @@ jobs:
               dist/SHA256SUMS \
               dist/swift-sources/MintlayerWalletBindings.swift
           else
+            # Pre-release versions must not claim the GitHub "Latest"
+            # badge; only final releases do.
+            latest_flag="--latest"
+            case "$VERSION" in *-*|*+*) latest_flag="--latest=false" ;; esac
             gh release create "$TAG" \
               dist/mintlayer-wallet-bindings-*.aar \
               dist/MintlayerWalletBindings.xcframework.zip \
               dist/SHA256SUMS \
               dist/swift-sources/MintlayerWalletBindings.swift \
               --title "Mobile bindings $TAG" \
-              --notes "$notes"
+              --notes "$notes" \
+              "$latest_flag"
           fi
 
       - name: Open the SPM checksum-pin PR

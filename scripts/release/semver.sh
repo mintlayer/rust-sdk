@@ -20,15 +20,21 @@ semver_prerelease_cmp() { # <0 if $1 < $2, 0 equal, >0 if $1 > $2
     if [ -z "${x}" ] && [ -z "${y}" ]; then continue; fi
     if [ -z "${x}" ]; then echo -1; return; fi
     if [ -z "${y}" ]; then echo 1; return; fi
-    # Numeric identifiers are lower than alphanumeric ones; numerics
-    # are digit-capped at 18 by the callers' validation regexes, so the
-    # decimal arithmetic cannot overflow.
-    if [[ "${x}" =~ ^[0-9]{1,18}$ ]] && [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
-      [ "$((10#${x}))" -lt "$((10#${y}))" ] && { echo -1; return; }
-      [ "$((10#${x}))" -gt "$((10#${y}))" ] && { echo 1; return; }
-    elif [[ "${x}" =~ ^[0-9]{1,18}$ ]]; then
+    # Numeric identifiers are lower than alphanumeric ones. Two numeric
+    # identifiers compare by digit length then bytes (semver forbids
+    # leading zeros, so this equals numeric order for any length — no
+    # arithmetic, no overflow).
+    if [[ "${x}" =~ ^[0-9]+$ ]] && [[ "${y}" =~ ^[0-9]+$ ]]; then
+      if [ "${#x}" -ne "${#y}" ]; then
+        [ "${#x}" -lt "${#y}" ] && { echo -1; return; }
+        [ "${#x}" -gt "${#y}" ] && { echo 1; return; }
+      fi
+      [[ "${x}" < "${y}" ]] && { echo -1; return; }
+      [[ "${x}" > "${y}" ]] && { echo 1; return; }
+      continue
+    elif [[ "${x}" =~ ^[0-9]+$ ]]; then
       echo -1; return
-    elif [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
+    elif [[ "${y}" =~ ^[0-9]+$ ]]; then
       echo 1; return
     elif [[ "${x}" < "${y}" ]]; then
       echo -1; return

@@ -2,8 +2,10 @@
 # LC_ALL=C pins collation for the semver string comparisons below.
 export LC_ALL=C
 
-# Shared semver precedence comparator (single source of truth, also
-# used by check-pin-order.sh).
+# Shared helpers, and the semver precedence comparator (single sources
+# of truth, also used by check-pin-order.sh and guard-release-refresh.sh).
+# shellcheck disable=SC1091  # sourced next to this file, linted directly
+source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 # shellcheck disable=SC1091  # sourced next to this file, linted directly
 source "${BASH_SOURCE[0]%/*}/semver.sh"
 # Open (or reuse) the SPM checksum-pin pull request for a release tag.
@@ -28,18 +30,6 @@ XCSUM="${3:?XCSUM required}"
 DEFAULT_BRANCH="${4:?DEFAULT_BRANCH required}"
 
 BRANCH="pin-spm-checksum-${VERSION}"
-
-# Workflow-command values need %-/CR-/LF-escaping to stay one annotation.
-esc() {
-  # Strip C0 control bytes (incl. ESC) so extracted repo content cannot
-  # spoof the log with terminal escapes, then %-escape the rest.
-  local s
-  s="$(printf '%s' "$1" | tr -d '\000-\037\177\200-\377')"
-  s="${s//%/%25}"
-  s="${s//$'\r'/%0D}"
-  s="${s//$'\n'/%0A}"
-  printf '%s' "$s"
-}
 
 # Mirror the workflow's validation so direct/manual invocations get the
 # same fail-closed guarantees as the release run.
@@ -155,8 +145,7 @@ origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" 
   || { echo "::error::cannot read origin/${DEFAULT_BRANCH}:Package.swift"; exit 1; }
 # Only real code lines constitute the pin: block comments, line
 # comments, and their decoy literals are all ignored.
-origin_swift="$(printf '%s' "${origin_swift}" | perl -0777 -pe 's{\Q/*\E.*?\*/}{}gs')"
-origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//' || true)"
+origin_code="$(strip_swift_comments "${origin_swift}")"
 tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v' || true)"
 sum_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "' || true)"
 if [ "${tag_assignments}" != "1" ] || [ "${sum_assignments}" != "1" ]; then
@@ -167,7 +156,7 @@ origin_pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' \
   | grep -oE 'v[0-9][^"]*' || true)"
 origin_pin_sum_raw="$(printf '%s\n' "${origin_code}" \
-  | grep -oE 'checksum: "[^"]*"' | grep -oE '"[^"]*"' | tr -d '"' | head -1 || true)"
+  | grep -E '^checksum: "' | head -1 | grep -oE '"[^"]*"' | tr -d '"' || true)"
 origin_pin_sum="$(printf '%s\n' "${origin_pin_sum_raw}" \
   | grep -oE '^[0-9a-f]{64}$' || true)"
 origin_pin_active=0
