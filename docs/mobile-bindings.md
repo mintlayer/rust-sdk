@@ -112,9 +112,10 @@ val address = pubkeyToPubkeyhashAddress(receiving0, Network.TESTNET)
 ## Swift (iOS)
 
 The iOS artifact will be an XCFramework covering iOS devices
-(`ios-arm64`) and simulators (`ios-arm64_x86_64-simulator`), exposed as the
-`MintlayerWalletBindings` module; it ships with the first tagged release
-(see "Versioning").
+(`ios-arm64`) and simulators (`ios-arm64_x86_64-simulator`); it ships with
+the first tagged release (see "Versioning"). Consumers add the repository
+as an SPM dependency; the generated Swift wrapper is compiled by Swift
+Package Manager against the XCFramework.
 
 ```swift
 import MintlayerWalletBindings
@@ -159,6 +160,17 @@ attached to the GitHub release, so consumers never need a Rust toolchain.
 The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded
 in the repository `CHANGELOG.md`.
+
+## Building the iOS XCFramework
+
+The canonical entry point for contributors on macOS with Xcode:
+
+```sh
+bash scripts/ios/build-xcframework.sh
+```
+
+Outputs `dist/MintlayerWalletBindings.xcframework`, its zip and the
+SHA-256 checksum used by the release.
 
 ## Building the Android AAR
 

@@ -34,3 +34,6 @@ bindings/kotlin/.gradle/
 bindings/kotlin/src/main/kotlin/
 bindings/kotlin/src/main/jniLibs/
 bindings/kotlin/local.properties
+dist/
+bindings/swift-tests/.build/
+bindings/swift-tests/.netrc

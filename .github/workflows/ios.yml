@@ -1,0 +1,67 @@
+name: iOS XCFramework
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "bindings/**"
+      - "src/**"
+      - "scripts/ios/**"
+      - "Package.swift"
+      - "SwiftSources/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "bindings/**"
+      - "src/**"
+      - "scripts/ios/**"
+      - "Package.swift"
+      - "SwiftSources/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ios.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  xcframework:
+    name: Build XCFramework and run on-simulator acceptance
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Build XCFramework (3 slices + generated Swift)
+        run: bash scripts/ios/build-xcframework.sh
+
+      - name: Upload XCFramework artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mintlayer-wallet-bindings-xcframework
+          path: |
+            dist/MintlayerWalletBindings.xcframework.zip
+            dist/SHA256SUMS
+            dist/swift-sources/MintlayerWalletBindings.swift
+          if-no-files-found: error
+
+      - name: Run on-simulator acceptance tests
+        run: |
+          cd bindings/swift-tests
+          xcodebuild test \
+            -scheme MintlayerWalletBindingsTests \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -quiet
