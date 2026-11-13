@@ -34,7 +34,10 @@ concurrency:
 jobs:
   xcframework:
     name: Build XCFramework and run on-simulator acceptance
-    runs-on: macos-14
+    # macos-latest resolves to the hosted-runner configuration this org
+    # allows; the explicit macos-14 label maps to an unsupported pool
+    # ("macos-14-arm64-us-default is not supported").
+    runs-on: macos-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
