@@ -87,12 +87,12 @@ EOF
 chmod +x "${STUBS}/git" "${STUBS}/gh"
 
 XCSUM="aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"
-FULLY_PINNED='let releaseTag = "wallet-bindings-v1.2.3" // ...
-checksum: "'"${XCSUM}"'"'
-PARTIAL_DRIFT='let releaseTag = "wallet-bindings-v1.2.2" // ...
-checksum: "'"${XCSUM}"'"'
-NOT_PINNED='let releaseTag = "wallet-bindings-v9.9.9" // ...
-checksum: "deadbeef"'
+FULLY_PINNED='let releaseTag = "wallet-bindings-v1.2.3"
+            checksum: "'"${XCSUM}"'"'
+PARTIAL_DRIFT='let releaseTag = "wallet-bindings-v1.2.2"
+            checksum: "'"${XCSUM}"'"'
+NOT_PINNED='let releaseTag = "wallet-bindings-v9.9.9"
+            checksum: "deadbeef"'
 
 # PR fixtures; baseRefName is main unless stated.
 echo '[]' > "${TMP}/pr.none"
@@ -201,8 +201,8 @@ assert_no_mutations
 # 5b. Mirror drift: new tag but STALE checksum -> fail closed (the sed
 # for the checksum no-op'd; SPM consumers would resolve a stale artifact).
 OLD_XCSUM="1111111111111111111111111111111111111111111111111111111111111111"
-STALE_CKSUM='let releaseTag = "wallet-bindings-v1.2.3" // ...
-checksum: "'"${OLD_XCSUM}"'"'
+STALE_CKSUM='let releaseTag = "wallet-bindings-v1.2.3"
+            checksum: "'"${OLD_XCSUM}"'"'
 set_fixtures 0 1 "${STALE_CKSUM}" pr.none
 run_case "mirror drift (tag new, checksum stale) fails" 1
 assert_no_mutations
@@ -432,9 +432,9 @@ LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "metadata-suffix equal precedence refused"; else bad "metadata-suffix equal precedence refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
-# 29d. Huge numeric prerelease identifiers (20 digits) compare as
-# alphanumeric under the 18-digit cap: an origin pin of rc<20 digits>
-# still outranks incoming rc.2 -> refused, no arithmetic wrap.
+# 29d. Huge numeric prerelease identifiers compare by (digit length,
+# bytes) — no arithmetic — so an origin pin of rc<20 digits> still
+# outranks incoming rc.2 -> refused, no arithmetic wrap.
 set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3-2" // ...
 checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3-18446744073709551617"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
@@ -600,7 +600,8 @@ else
 fi
 
 # Static check: the TAG regex must be byte-identical in every copy
-# (three occurrences in release.yml, one in the script under test).
+# (three occurrences in release.yml, one in open-spm-pr.sh, one in
+# guard-release-refresh.sh).
 TAG_REGEX='^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$'
 wf="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/release.yml" || true)"
 sc="$(grep -cF -- "${TAG_REGEX}" "${UNDER_TEST}" || true)"

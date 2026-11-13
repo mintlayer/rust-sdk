@@ -16,8 +16,11 @@ source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 source "${BASH_SOURCE[0]%/*}/semver.sh"
 
 BASE_BRANCH="${1:?base branch required}"
-# shellcheck disable=SC1091  # sourced next to this file, linted directly
-source "${BASH_SOURCE[0]%/*}/semver.sh"
+if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
+  || [[ "${BASE_BRANCH}" == pin-spm-checksum-* ]]; then
+  echo "::error::unexpected base branch: $(esc "${BASE_BRANCH}")"
+  exit 1
+fi
 
 incoming_matches="$(strip_swift_comments "$(cat Package.swift)" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"

@@ -12,20 +12,16 @@ esc() {
   printf '%s' "$s"
 }
 
-# Swift comment removal for pin verification: block comments first
-# (perl -0777 so multi-line comments collapse), then whole line
-# comments. A decoy literal inside any comment is invisible afterwards.
+# Swift code-line extraction for pin verification: block comments first
+# (perl -0777 so multi-line comments collapse), then line comments, then
+# leading/trailing whitespace and blank lines — the emitted lines are
+# exactly the assignment lines, normalized to column 0. A decoy literal
+# inside any comment is invisible afterwards.
 strip_swift_comments() {
   printf '%s' "$1" \
     | perl -0777 -pe 's{/\*.*?\*/}{}gs' \
-    | grep -v '^[[:space:]]*//' \
+    | sed 's://.*$::' \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | grep -v '^$' \
     || true
-}
-
-# Count whole-line assignments after comment stripping and trailing
-# whitespace removal. Usage: count_line <file-content-var-name> <line>
-count_exact_line() {
-  local -n _content="$1"
-  printf '%s\n' "${_content}" | sed 's:[[:space:]]*//.*$::' | sed 's:[[:space:]]*$://' \
-    | grep -cF -x -- "$2" || true
 }

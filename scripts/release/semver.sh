@@ -46,15 +46,18 @@ semver_prerelease_cmp() { # <0 if $1 < $2, 0 equal, >0 if $1 > $2
 }
 
 # semver_cmp <a> <b>: echoes -1|0|1 per semver precedence. Build
-# metadata (+suffix) is excluded from precedence.
+# metadata (+suffix) is excluded from precedence. Accepted deviation:
+# the callers' validation regexes permit leading zeros in numeric
+# components; the 10# arithmetic below compares them decimally, so
+# '1.02.3' equals '1.2.3' rather than being rejected.
 semver_cmp() { # <0 if $1 < $2, 0 if equal, >0 if $1 > $2
-  local a="${1%%-*}" b="${2%%-*}"
+  # Build metadata is excluded from precedence: strip it FIRST, then
+  # take the pre-release from the stripped half (a '+' build suffix may
+  # itself contain '-').
+  local a="${1%%+*}" b="${2%%+*}"
   local ap="" bp=""
-  [[ "$1" == *-* ]] && ap="${1#*-}"
-  [[ "$2" == *-* ]] && bp="${2#*-}"
-  # Build metadata is excluded from precedence: strip it from both.
-  ap="${ap%%+*}"
-  bp="${bp%%+*}"
+  [[ "$a" == *-* ]] && ap="${a#*-}"
+  [[ "$b" == *-* ]] && bp="${b#*-}"
   local -a A B
   read -ra A <<< "${a//[^0-9]/ }"
   read -ra B <<< "${b//[^0-9]/ }"

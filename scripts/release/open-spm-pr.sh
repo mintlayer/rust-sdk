@@ -117,8 +117,8 @@ git add Package.swift
 # whitespace, then count whole-line matches.
 expected_tag_line="let releaseTag = \"${TAG}\""
 expected_sum_line="checksum: \"${XCSUM}\""
-pin_tag_lines="$(sed 's#//.*$##' Package.swift | sed 's/[[:space:]]*$//' | grep -cF -x -- "${expected_tag_line}" || true)"
-pin_sum_lines="$(sed 's#//.*$##' Package.swift | sed 's/[[:space:]]*$//' | grep -cF -x -- "${expected_sum_line}" || true)"
+pin_tag_lines="$(strip_swift_comments "$(cat Package.swift)" | grep -cF -x -- "${expected_tag_line}" || true)"
+pin_sum_lines="$(strip_swift_comments "$(cat Package.swift)" | grep -cF -x -- "${expected_sum_line}" || true)"
 if [ "${pin_tag_lines}" != "1" ] || [ "${pin_sum_lines}" != "1" ]; then
   echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
   exit 1
