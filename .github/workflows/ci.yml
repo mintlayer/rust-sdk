@@ -51,83 +51,12 @@ jobs:
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Single comparison implementation (scripts/release/semver.sh),
-          # comment-stripped strict extraction, annotation-safe echoes —
-          # shared with the release scripts.
-          if [[ ! "$BASE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
-            echo "::error::unexpected base branch"
-            exit 1
-          fi
-          # Any PR that edits Package.swift is order-checked, whatever
-          # its head branch is named; reserved-namespace heads
-          # additionally must pin exactly the release their branch name
-          # declares (strict mode). NOTE: bot pin PRs opened with
-          # GITHUB_TOKEN do not emit pull_request events; they are
-          # enforced at creation time by the release workflow's rewind
-          # guard, which also supersedes older open pin PRs (no
-          # merge-order rewind).
-          case "$HEAD_REF" in
-            pin-spm-checksum-*)
-              expected_tag="wallet-bindings-v${HEAD_REF#pin-spm-checksum-}"
-              ;;
-            *)
-              expected_tag=""
-              ;;
-          esac
-          if [ -n "$expected_tag" ] && [[ ! "$expected_tag" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::derived tag does not match wallet-bindings-v<semver>"
-            exit 1
-          fi
-          # Bind the incoming checksum to the release the pin names:
-          # SPM refuses on integrity mismatch at resolve time, so an
-          # unverifiable checksum would strand every consumer. The
-          # release must already exist (the release job publishes it
-          # before opening its pin PR) and its SHA256SUMS must list
-          # exactly the XCFramework zip hash the head pins. Fail closed
-          # on a missing or unreadable manifest.
-          # shellcheck disable=SC1091  # sourced from the trusted base checkout
-          source scripts/release/pinlib.sh
-          head_swift="$(git show "${HEAD_SHA}:Package.swift")" \
-            || { echo "::error::cannot read Package.swift from the PR head"; exit 1; }
-          head_norm="$(strip_swift_comments "${head_swift}")"
-          head_tag="$(printf '%s\n' "${head_norm}" | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*' || true)"
-          head_checksum="$(printf '%s\n' "${head_norm}" | grep -E '^checksum: "' | grep -oE '[0-9a-f]{64}' || true)"
-          if [ "$(printf '%s\n' "${head_norm}" | grep -cE '^let releaseTag = ' || true)" != "1" ] \
-            || [ "$(printf '%s\n' "${head_norm}" | grep -cE '^checksum: "[0-9a-f]{64}"$' || true)" != "1" ] \
-            || [[ ! "${head_tag}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::PR head does not carry exactly one releaseTag and one hex checksum pin"
-            exit 1
-          fi
-          sums="$(gh release download "${head_tag}" --pattern "SHA256SUMS" --output - 2>/dev/null)" \
-            || { echo "::error::release is missing or carries no readable SHA256SUMS; refusing an unverifiable pin"; exit 1; }
-          published="$(printf '%s\n' "${sums}" | grep 'MintlayerWalletBindings.xcframework.zip' | awk '{print $1}' || true)"
-          if [ "${published}" != "${head_checksum}" ]; then
-            echo "::error::pinned checksum does not match the published SHA256SUMS for $(esc "${head_tag}")"
-            exit 1
-          fi
-          # The checkout is the base branch; pull the PR head commit so
-          # the diff below and check-pin-order.sh's data-only read of
-          # the head's Package.swift can see it (push events already
-          # have their SHA locally).
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head"
-          fi
-          # Fail closed on diff errors: an unreadable head (e.g. a
-          # force-push landing between event emission and the fetch)
-          # must not masquerade as "Package.swift untouched". The head
-          # fetch is anonymous, so private repositories fail closed
-          # here rather than silently skipping the gate.
-          if ! head_files="$(git diff --name-only "origin/${BASE_REF}...${HEAD_SHA}")"; then
-            echo "::error::cannot diff the incoming pin against origin/${BASE_REF}"
-            exit 1
-          fi
-          if ! printf '%s\n' "${head_files}" | grep -q '^Package.swift$'; then
-            echo "Package.swift untouched; nothing to check"
-            exit 0
-          fi
-          # Gate code is the trusted base checkout; the PR head's
-          # Package.swift is consumed purely as data via its SHA.
-          scripts/release/check-pin-order.sh "$BASE_REF" "$expected_tag" "$HEAD_SHA"
+          # Diff-gated applicability, checksum-to-release binding, and
+          # ordering enforcement all live in one tested script (the
+          # stub harness covers it); reserved-namespace heads get
+          # strict tag equality, every other Package.swift edit gets
+          # ordering-only enforcement.
+          scripts/release/pin-order-gate.sh
 
   fmt:
     name: Format

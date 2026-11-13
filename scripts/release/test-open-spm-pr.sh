@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# Unit tests for scripts/release/open-spm-pr.sh and
-# scripts/release/guard-release-refresh.sh using stub git/gh on PATH.
-# Covers: tag-ancestry guard (shallow-aware fetch both ways, git-error
-# disambiguation), HEAD==tag guard, both substitution verifications (pin
-# fully present / either half drifted / absent), already-merged,
-# pre-pinned and reverted-main short-circuits, semver rewind guard
-# (forward allowed, stale/same-version refused, one-sided and mangled
-# origin pins refused), owner/cross-repo/base-branch PR detection,
-# force-push ordering and its absence on failure paths,
-# owner/branch/checksum/tag/version validation, and the byte-identical
-# TAG regex across all copies. Run by lint.yml and locally before
-# releases.
+# Unit tests for scripts/release/open-spm-pr.sh,
+# scripts/release/guard-release-refresh.sh, scripts/release/pin-order-gate.sh,
+# and scripts/release/check-pin-order.sh, run entirely against stub
+# git/gh binaries (no network, no repository mutation).
+#
+# Covered, among the rest of the suite: idempotent create/reuse of the
+# checksum-pin PR with superseding of older pins and refusal on newer
+# ones; rewind guards (semver precedence, build metadata excluded,
+# deactivated-pin markers, mangled states); comment stripping
+# (line/block, decoys, indent-tolerant); strict and ordering modes of
+# the merge gate including the INCOMING_REF read and its failure paths;
+# the gate script's diff-gated applicability, SHA256SUMS checksum
+# binding, and strict-tag derivation; fatal origin refreshes
+# (guard + gate); gh pr list failures failing closed with no push and
+# no PR opened; semver.sh comparator units; fixture reset and
+# no-mutation assertions.
+# Runs without -e: failures are counted per case, not fatal.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,8 +61,11 @@ case "$1 $2" in
   "diff --cached") [ "$(cat "${CASE_DIR}/staged_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "diff --quiet") [ "$(cat "${CASE_DIR}/default_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "rev-parse --is-shallow-repository") cat "${CASE_DIR}/is_shallow" ;;
-  "fetch origin" | "fetch --unshallow")
+  "fetch origin" | "fetch --unshallow" | "fetch --no-tags")
     [ "$(cat "${CASE_DIR}/fetch_fails" 2>/dev/null || echo 0)" = "1" ] && exit 1
+    exit 0 ;;
+  "diff --name-only")
+    [ "$(cat "${CASE_DIR}/head_touched" 2>/dev/null || echo 0)" = "1" ] && echo "Package.swift"
     exit 0 ;;
   "rev-parse HEAD") cat "${CASE_DIR}/head_commit" ;;
   "show origin/"*)
@@ -80,6 +88,11 @@ EOF
 cat > "${STUBS}/gh" << 'EOF'
 #!/usr/bin/env bash
 echo "gh $*" >> "${LOG}"
+if [ "$1" = "release" ] && [ "$2" = "download" ]; then
+  [ "$(cat "${CASE_DIR}/release_download_fails" 2>/dev/null || echo 0)" = "1" ] && exit 1
+  cat "${CASE_DIR}/release_sums"
+  exit 0
+fi
 if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
   mode="$(cat "${CASE_DIR}/pr_list_fails" 2>/dev/null || echo "")"
   case "${mode}" in
@@ -753,6 +766,80 @@ rc=$?
 if [ "${rc}" = "1" ]; then ok "pin order refuses an ambiguous base pin"; else bad "pin order refuses an ambiguous base pin" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
 
+# GATE. The ci.yml gate script: diff-gated applicability, checksum
+# binding against the release's SHA256SUMS, then ordering.
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+GATE="${SCRIPT_DIR}/pin-order-gate.sh"
+printf 'SHA256SUMS for the release\n%s  MintlayerWalletBindings.xcframework.zip\n' "${XCSUM}" > "${TMP}/release_sums"
+printf '0' > "${TMP}/release_download_fails"
+
+# Untouched Package.swift -> skip without reading anything.
+printf '0' > "${TMP}/head_touched"
+run_gate() {
+  ( cd "${STUBS}/repo" && \
+    PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+    BASE_REF="main" HEAD_SHA="0123456789abcdef0123456789abcdef01234567" \
+    HEAD_REF="$1" EVENT_NAME="pull_request" PR_NUMBER="7" \
+    bash "${GATE}" > "${OUT}" 2>&1 )
+  rc=$?
+}
+run_gate "feature"
+if [ "${rc}" = "0" ] && grep -q "untouched" "${OUT}"; then
+  ok "gate skips a PR that does not touch Package.swift"
+else
+  bad "gate skips a PR that does not touch Package.swift" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# Touched + forward pin bound to the published sums -> allow.
+printf '1' > "${TMP}/head_touched"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+run_gate "feature"
+if [ "${rc}" = "0" ]; then ok "gate allows a bound forward pin"; else bad "gate allows a bound forward pin" "exit ${rc}: $(cat "${OUT}")"; fi
+
+# Checksum not matching the published SHA256SUMS -> refuse.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/incoming_swift"
+run_gate "feature"
+if [ "${rc}" = "1" ] && grep -q "does not match the published" "${OUT}"; then
+  ok "gate refuses an unbound checksum"
+else
+  bad "gate refuses an unbound checksum" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# Unreadable release manifest -> fail closed.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+printf '1' > "${TMP}/release_download_fails"
+run_gate "feature"
+printf '0' > "${TMP}/release_download_fails"
+if [ "${rc}" = "1" ] && grep -q "unverifiable pin" "${OUT}"; then
+  ok "gate fails closed on a missing release manifest"
+else
+  bad "gate fails closed on a missing release manifest" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# Mangled head (two releaseTag lines) -> refuse.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\nlet releaseTag = "wallet-bindings-v1.2.3"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+run_gate "feature"
+if [ "${rc}" = "1" ] && grep -q "exactly one releaseTag" "${OUT}"; then
+  ok "gate refuses a mangled head"
+else
+  bad "gate refuses a mangled head" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# Reserved namespace: strict tag equality against the branch name.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+run_gate "pin-spm-checksum-1.3.0"
+if [ "${rc}" = "0" ]; then ok "gate strict mode accepts the declared release"; else bad "gate strict mode accepts the declared release" "exit ${rc}: $(cat "${OUT}")"; fi
+
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+run_gate "pin-spm-checksum-1.3.0"
+if [ "${rc}" = "1" ] && grep -q "does not carry exactly the expected pin assignment" "${OUT}"; then
+  ok "gate strict mode refuses a tag mismatch"
+else
+  bad "gate strict mode refuses a tag mismatch" "exit ${rc}: $(cat "${OUT}")"
+fi
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
 # 50. Reserved-namespace base branch -> fail closed.
 # shellcheck disable=SC2016  # fixture line content is not expanded
 printf 'let releaseTag = "wallet-bindings-v0.9.0"\nchecksum: "${XCSUM}"\n' > "${STUBS}/repo/Package.swift"
@@ -795,7 +882,7 @@ if [ "${rc}" = "1" ]; then ok "pin order fails closed on git show error"; else b
 printf '0' > "${TMP}/show_fails"
 printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
 
-# 54. Strict mode PASS path over the REAL root Package.swift shape:
+# 54. Strict mode PASS path over a representative root Package.swift shape:
 # header comment, the download URL interpolating \(releaseTag) (which a
 # substring 'releaseTag' count would double-count), releaseTag at
 # column 0, checksum indented 12 spaces.
@@ -918,11 +1005,12 @@ wf="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/release.
 sc="$(grep -cF -- "${TAG_REGEX}" "${UNDER_TEST}" || true)"
 gd="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/guard-release-refresh.sh" || true)"
 cy="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/ci.yml" || true)"
+gate="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/pin-order-gate.sh" || true)"
 cpo="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/check-pin-order.sh" || true)"
-if [ "${wf}" = "3" ] && [ "${sc}" = "1" ] && [ "${gd}" = "2" ] && [ "${cy}" = "2" ] && [ "${cpo}" = "1" ]; then
+if [ "${wf}" = "3" ] && [ "${sc}" = "1" ] && [ "${gd}" = "2" ] && [ "${cy}" = "0" ] && [ "${gate}" = "2" ] && [ "${cpo}" = "1" ]; then
   ok "tag regex identical across all nine copies"
 else
-  bad "tag regex identical across all nine copies" "release.yml=${wf}, script=${sc}, guard=${gd}, ci=${cy}, pin-order=${cpo}"
+  bad "tag regex identical across all nine copies" "release.yml=${wf}, script=${sc}, guard=${gd}, ci=${cy}, gate=${gate}, pin-order=${cpo}"
 fi
 
 echo "passed: ${pass}, failed: ${fail}"

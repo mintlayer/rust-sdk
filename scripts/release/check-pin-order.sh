@@ -13,6 +13,12 @@
 # structure and order only; the caller must then bind the incoming
 # checksum to the release it names (ci.yml checks it against the
 # release's published SHA256SUMS).
+#
+# Residual merge-time race: this gate decides against origin/<base> as
+# of its own run. A pin PR merging AFTER the gate passes but BEFORE a
+# rewind PR merges is invisible here; operators must enable "require
+# branches to be up to date before merging" for this required check on
+# the default branch to close that window.
 set -euo pipefail
 export LC_ALL=C
 
@@ -67,11 +73,19 @@ checksum_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "' || 
 checksum_valid="$(printf '%s\n' "${normalized_in}" | grep -cE '^checksum: "[0-9a-f]{64}"$' || true)"
 if [ "${expected_lines}" != "1" ] || [ "${release_tag_lines}" != "1" ] \
   || [ "${checksum_lines}" != "1" ] || [ "${checksum_valid}" != "1" ]; then
-  echo "::error::PR head does not carry exactly the expected pin assignment for $(esc "${EXPECTED_TAG}") (ambiguous, missing, or non-hex checksum)"
+  if [ -n "${EXPECTED_TAG}" ]; then
+    echo "::error::PR head does not carry exactly the expected pin assignment for $(esc "${EXPECTED_TAG}") (ambiguous, missing, or non-hex checksum)"
+  else
+    echo "::error::PR head must carry exactly one releaseTag assignment and one hex checksum pin"
+  fi
   exit 1
 fi
 incoming_tag="$(printf '%s\n' "${normalized_in}" \
-  | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
+  | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*' || true)"
+if [ -z "${incoming_tag}" ]; then
+  echo "::error::PR head carries no parseable wallet-bindings tag"
+  exit 1
+fi
 incoming_version="${incoming_tag#wallet-bindings-v}"
 if [[ ! "${incoming_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::unparseable incoming pin version: $(esc "${incoming_version}")"
@@ -87,9 +101,18 @@ git fetch origin "+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
 origin_swift="$(git show "origin/${BASE_BRANCH}:Package.swift" 2>/dev/null)" \
   || { echo "::error::cannot read origin/${BASE_BRANCH}:Package.swift"; exit 1; }
 origin_code="$(strip_swift_comments "${origin_swift}")"
+# The same prefix count every sibling script uses, plus the anchored
+# count: a prefix-matching but mangled pin line on the base (stray
+# suffix, double space) would otherwise read as "no pin" and let a
+# rewind pass.
+current_prefix="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = ' || true)"
 current_matches="$(printf '%s\n' "${origin_code}" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
 if [ "${current_matches}" = "0" ]; then
+  if [ "${current_prefix}" != "0" ]; then
+    echo "::error::origin/${BASE_BRANCH} carries ${current_prefix} mangled pin line(s) and no well-formed one; refusing (repair manually)"
+    exit 1
+  fi
   echo "no pin on ${BASE_BRANCH}; any pin order is acceptable"
   exit 0
 fi
