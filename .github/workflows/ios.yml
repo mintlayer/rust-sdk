@@ -1,0 +1,76 @@
+name: iOS XCFramework
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "bindings/**"
+      - "src/**"
+      - "scripts/ios/**"
+      - "Package.swift"
+      - "SwiftSources/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "bindings/**"
+      - "src/**"
+      - "scripts/ios/**"
+      - "Package.swift"
+      - "SwiftSources/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ios.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  xcframework:
+    name: Build XCFramework and run on-simulator acceptance
+    # macos-latest resolves to the hosted-runner configuration this org
+    # allows; the explicit macos-14 label maps to an unsupported pool
+    # ("macos-14-arm64-us-default is not supported").
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Build XCFramework (3 slices + generated Swift)
+        run: bash scripts/ios/build-xcframework.sh
+
+      - name: Upload XCFramework artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mintlayer-wallet-bindings-xcframework
+          path: |
+            dist/MintlayerWalletBindings.xcframework.zip
+            dist/SHA256SUMS
+            dist/swift-sources/MintlayerWalletBindings.swift
+          if-no-files-found: error
+
+      - name: Run on-simulator acceptance tests
+        run: |
+          cd bindings/swift-tests
+          # Device names drift with Xcode versions; resolve by UDID instead.
+          DEVICE_UDID=$(xcrun simctl list devices available \
+            | grep -m1 "iPhone" \
+            | sed -E 's/.*\(([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\).*/\1/')
+          [ -n "$DEVICE_UDID" ] || { echo "no available iPhone simulator" >&2; exit 1; }
+          echo "using simulator UDID: $DEVICE_UDID"
+          xcodebuild test \
+            -scheme MintlayerWalletBindingsTests \
+            -destination "id=$DEVICE_UDID" \
+            -quiet

@@ -7,6 +7,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- bindings: new `mintlayer-wallet-bindings` crate exposing the Mintlayer
+  wallet primitives to Kotlin and Swift via UniFFI, mirroring the full
+  wasm-bindings surface: mnemonic → default account extended private key,
+  receiving/change derivation (private and watch-only public),
+  public-key/address encoding, extended-private-key decode/encode with
+  roundtrip guarantees, transaction input/output construction, witness
+  signing, message and challenge signatures, transaction intents, protocol
+  fees, timelock encodings, token/pool/delegation/order id derivation,
+  stake pool helpers and multisig challenges. Blob outputs are
+  byte-for-byte identical to `@mintlayer/wasm-lib` 1.4.0; parity is pinned
+  by tests on the public BIP39 test vector plus a 3,400-case differential
+  suite replaying inputs captured from `@mintlayer/wasm-lib` 1.4.0 through
+  every export except the two VRF-gated stake-pool encoders, which are
+  pinned structurally (CI-generated fixtures).
+- bindings: iOS distribution — `scripts/ios/build-xcframework.sh` assembles
+  a `MintlayerWalletBindings.xcframework` (arm64 device, arm64 simulator)
+  from the same pinned core rev, and the root `Package.swift`
+  exposes an SPM binary target for consumers. On-simulator acceptance tests
+  replay the public BIP39 vectors through the generated Swift bindings.
+- bindings: release workflow — pushing a `wallet-bindings-v*` tag builds
+  the Android AAR and the iOS XCFramework from the tagged commit, attaches
+  them with checksums to a GitHub Release, and pins the SPM checksum in
+  the root `Package.swift` to the released artifact. The generated Kotlin
+  package is `org.mintlayer.wallet.bindings`; the Swift module is
+  `MintlayerWalletBindings`.
 - indexer: cursor (keyset) pagination for api-server v2
   (mintlayer-core PR #2130): `Page<T>`, the reusable `Pager` walker
   (`*_pager` constructors for pools, the global transaction listing, both
@@ -33,6 +58,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- crypto: the `ml-*` mintlayer-core git dependencies are re-pinned from
+  rev `7f4393ac` to `3a43aba00` (the v1.4.5 release line plus the upstream
+  testnet checkpoint fix). The v1.4.5 tag itself contains two malformed
+  hex hashes in the testnet checkpoint data that make any testnet chain
+  config construction panic; upstream commit `3a43aba00` corrects them.
+  No SDK-facing behavior changes otherwise; the full test suite passes
+  unchanged.
 - **Breaking:** indexer `Transaction.block_id`, `Transaction.timestamp`
   and `Transaction.confirmations` are now `Option<...>`: a pending
   (mempool) transaction has `null` for all three on the wire, which

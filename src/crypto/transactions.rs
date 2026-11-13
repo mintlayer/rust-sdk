@@ -117,6 +117,20 @@ pub fn decode_signed_transaction_to_json(
     json_with_addresses(&tx, network)
 }
 
+/// Decodes an unsigned transaction into a JSON representation with bech32
+/// addresses.
+///
+/// The bytes must exactly match one `Transaction` object; trailing bytes
+/// (e.g. the witness list of a signed transaction) make this fail — use
+/// [`decode_signed_transaction_to_json`] for signed transactions.
+pub fn decode_unsigned_transaction_to_json(
+    transaction: &[u8],
+    network: Network,
+) -> Result<serde_json::Value, Error> {
+    let tx = Transaction::decode_all(&mut &transaction[..]).map_err(Error::from)?;
+    json_with_addresses(&tx, network)
+}
+
 /// Decodes a partially signed transaction into JSON with bech32 addresses.
 pub fn decode_partially_signed_transaction_to_json(
     transaction: &[u8],

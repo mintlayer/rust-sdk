@@ -24,3 +24,16 @@ tarpaulin-report.html
 *.p12
 secrets/
 .cargo/credentials
+
+# Local development scripts
+.orc/
+bindings/tests/fixtures/
+node_modules/
+bindings/kotlin/build/
+bindings/kotlin/.gradle/
+bindings/kotlin/src/main/kotlin/
+bindings/kotlin/src/main/jniLibs/
+bindings/kotlin/local.properties
+dist/
+bindings/swift-tests/.build/
+bindings/swift-tests/.netrc

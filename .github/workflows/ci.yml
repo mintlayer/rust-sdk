@@ -100,6 +100,28 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  differential-parity:
+    name: Differential parity (wasm-lib 1.4.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: scripts/differential/package-lock.json
+      - name: Generate fixtures from the wasm reference
+        run: npm ci --prefix scripts/differential && node scripts/differential/generate-fixtures.cjs
+      - name: Replay fixtures through the bindings
+        run: cargo test --locked -p mintlayer-wallet-bindings --test differential
+        env:
+          DIFFERENTIAL_FIXTURES_REQUIRED: "1"
+
   license:
     name: License headers
     runs-on: ubuntu-latest
