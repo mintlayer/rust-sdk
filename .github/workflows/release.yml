@@ -157,7 +157,7 @@ jobs:
           fi
           VERSION="${TAG#wallet-bindings-v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          declared=$(grep -m1 '^version = ' bindings/Cargo.toml | sed 's/version = "\(.*\)"/\1/' | tr -d '[:cntrl:]')
+          declared=$(awk '/^\[package\]/{f=1;next} /^\[/{f=0} f&&/^version/{sub(/^version[[:space:]]*=[[:space:]]*"/,"");sub(/".*/,"");print;exit}' bindings/Cargo.toml | tr -d '[:cntrl:]')
           if [ "$declared" != "$VERSION" ]; then
             # Plain log lines, not a workflow annotation: $declared comes
             # from the repo at the tag and is not %-escaped here.
@@ -213,6 +213,7 @@ jobs:
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           notes=$(cat << 'EOF'
           ## Mobile bindings release
@@ -235,6 +236,19 @@ jobs:
           )
           # Idempotent for re-runs after a transient pin-PR failure: an
           # existing release is reused and its assets refreshed in place.
+          # Guard: if the default branch already pins THIS release and a
+          # rebuild is not bit-reproducible, clobbering would desync the
+          # published artifacts from the merged checksum. Fail closed
+          # before any public mutation; forward releases are unaffected.
+          pin_on_main="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null \
+            | grep -oE 'checksum: "[0-9a-f]{64}"' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
+          pin_tag_on_main="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null \
+            | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' | grep -oE 'v[^"]*' || true)"
+          if [ "$pin_tag_on_main" = "$TAG" ] && [ -n "$pin_on_main" ] \
+            && [ "$pin_on_main" != "$xcsum" ]; then
+            echo "::error::rebuilt artifacts (checksum ${xcsum}) do not match the pin merged on ${DEFAULT_BRANCH} (${pin_on_main}); release assets left untouched - repair manually"
+            exit 1
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG already exists; refreshing assets"
             gh release upload "$TAG" --clobber \

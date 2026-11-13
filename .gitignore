@@ -26,7 +26,6 @@ secrets/
 .cargo/credentials
 
 # Local development scripts
-.orc/
 bindings/tests/fixtures/
 node_modules/
 bindings/kotlin/build/

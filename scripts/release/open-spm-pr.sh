@@ -150,9 +150,26 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
     exit 1
   fi
-  # sort -V: the first line is the smaller version. If the incoming
-  # VERSION sorts first, the origin pin is newer-or-equal -> rewind.
-  if [ "$(printf '%s\n%s\n' "${origin_version}" "${VERSION}" | sort -V | head -1)" = "${VERSION}" ]; then
+  # Semver precedence: numeric triple, then the pre-release rule (a
+  # pre-release is less than the final release).
+  semver_cmp() { # <0 if $1 < $2, 0 if equal, >0 if $1 > $2
+    local a="${1%%-*}" b="${2%%-*}"
+    local ap="" bp=""
+    [[ "$1" == *-* ]] && ap="${1#*-}"
+    [[ "$2" == *-* ]] && bp="${2#*-}"
+    local -a A B
+    read -ra A <<< "${a//[^0-9]/ }"
+    read -ra B <<< "${b//[^0-9]/ }"
+    local i
+    for i in 0 1 2; do
+      [ "${A[i]:-0}" -lt "${B[i]:-0}" ] && { echo -1; return; }
+      [ "${A[i]:-0}" -gt "${B[i]:-0}" ] && { echo 1; return; }
+    done
+    if [ -z "${ap}" ] && [ -n "${bp}" ]; then echo 1; return; fi
+    if [ -n "${ap}" ] && [ -z "${bp}" ]; then echo -1; return; fi
+    echo 0
+  }
+  if [ "$(semver_cmp "${VERSION}" "${origin_version}")" -le 0 ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi

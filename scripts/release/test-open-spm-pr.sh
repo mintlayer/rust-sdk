@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Unit tests for scripts/release/open-spm-pr.sh using stub git/gh on PATH.
-# Covers: tag-ancestry guard (shallow-aware fetch both ways), HEAD==tag
-# guard, both substitution verifications (pin fully present / either half
-# drifted / absent), already-merged and pre-pinned short-circuits,
-# owner/cross-repo/base-branch/rewind PR detection, force-push ordering
-# and its absence on failure paths, owner/branch/checksum/tag validation,
-# and the byte-identical TAG regex across all copies. Run by lint.yml and
-# locally before releases.
+# Covers: tag-ancestry guard (shallow-aware fetch both ways, git-error
+# disambiguation), HEAD==tag guard, both substitution verifications (pin
+# fully present / either half drifted / absent), already-merged,
+# pre-pinned and reverted-main short-circuits, semver rewind guard
+# (forward allowed, stale/same-version refused, one-sided and mangled
+# origin pins refused), owner/cross-repo/base-branch PR detection,
+# force-push ordering and its absence on failure paths,
+# owner/branch/checksum/tag/version validation, and the byte-identical
+# TAG regex across all copies. Run by lint.yml and locally before
+# releases.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,13 +32,10 @@ ok() { pass=$((pass + 1)); echo "ok - $1"; }
 # PR-controlled on pull_request runs, so neutralize workflow-command
 # forgery and control characters before echoing.
 sanitize() {
-  local s="$1"
-  s="${s//$'\r'/}"
-  s="${s//$'\n'/ | }"
-  s="${s//^::/[::}"
-  s="${s//::error::/[error] }"
-  s="${s//::warning::/[warning] }"
-  printf '%s' "$s"
+  # PR-controlled output: neutralize every workflow-command prefix
+  # (::error::, ::notice::, ::group::, ::add-mask::, ...) and control
+  # characters before echoing into the check log.
+  printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037' | sed -E 's/::[a-z][a-z-]*:([^:]|$)/[::\1/g'
 }
 bad() { fail=$((fail + 1)); echo "NOT OK - $1: $(sanitize "$2")"; }
 
@@ -252,6 +252,7 @@ assert_no_mutations
 # 12. Malformed XCSUM -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid checksum fails" 1 "mintlayer/rust-sdk" main "xyz"
+assert_no_mutations
 
 # 13. HEAD is not the tagged commit -> fail closed, no push.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
@@ -264,16 +265,20 @@ printf 'tagcommitsha' > "${TMP}/head_commit"
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "all-zero checksum fails" 1 "mintlayer/rust-sdk" main \
   "0000000000000000000000000000000000000000000000000000000000000000"
+assert_no_mutations
 
 # 15. VERSION that is not semver -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid version fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2
+assert_no_mutations
 
 # 16. TAG not matching the release pattern -> fail closed before fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid tag (no patch) fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2 "wallet-bindings-v1.2"
+assert_no_mutations
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid tag (wrong prefix) fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2.3 "evil-wallet-bindings-v1.2.3"
+assert_no_mutations
 
 # 17. Default branch inside the reserved namespace -> fail closed.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
@@ -348,6 +353,7 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 # 26. TAG/VERSION mismatch -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "mismatched tag and version fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 9.9.9
+assert_no_mutations
 
 # Static check: the TAG regex must be byte-identical in every copy
 # (three occurrences in release.yml, one in the script under test).
