@@ -18,6 +18,17 @@ byte-for-byte identical to the WASM wrappers; parity is pinned by tests
 against captured reference outputs of `@mintlayer/wasm-lib` 1.4.0 (see
 "Parity guarantees" below).
 
+## Supported platforms and architectures
+
+| Platform | Artifact | Architectures |
+|---|---|---|
+| Android 6.0+ (API 24) | `mintlayer-wallet-bindings-<ver>.aar` | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
+| iOS 15+ | `MintlayerWalletBindings.xcframework` | `ios-arm64` (device), `ios-arm64_x86_64-simulator` |
+
+The Intel simulator slice (`x86_64-apple-ios-sim`) is omitted: recent Xcode
+releases no longer ship Intel simulator runtimes, and Rust 1.92 does not
+publish that target's standard library.
+
 ## API surface
 
 **Keys and addresses**
@@ -91,9 +102,9 @@ is a pure cryptography and encoding primitive.
 ## Kotlin (Android)
 
 The generated Kotlin lives under `org.mintlayer.wallet.bindings`. The
-Android artifact will be an AAR containing the native libraries for
-`arm64-v8a`, `armeabi-v7a` and `x86_64`; it ships with the first tagged
-release (see "Versioning").
+Android artifact is an AAR containing the native libraries for
+`arm64-v8a`, `armeabi-v7a` and `x86_64`, attached to each release (see
+"Releasing").
 
 ```kotlin
 import org.mintlayer.wallet.bindings.Network
@@ -111,12 +122,12 @@ val address = pubkeyToPubkeyhashAddress(receiving0, Network.TESTNET)
 
 ## Swift (iOS)
 
-The iOS artifact will be an XCFramework covering iOS devices
-(`ios-arm64`) and Apple Silicon simulators (`ios-arm64_x86_64-simulator`);
-it ships with the first tagged release (see "Versioning"). The Intel
-simulator slice is omitted: recent Xcode releases no longer ship Intel
-simulator runtimes, matching the Rust toolchain. Consumers add the repository
-as an SPM dependency; the generated Swift wrapper is compiled by Swift
+The iOS artifact is an XCFramework covering iOS devices (`ios-arm64`)
+and Apple Silicon simulators (`ios-arm64_x86_64-simulator`); the Intel
+simulator slice is omitted, matching recent Xcode releases. The repository
+root carries an SPM `Package.swift` whose binary target fetches the
+released artifact, so Xcode users add the package by repository URL. The
+generated Swift wrapper is compiled by Swift
 Package Manager against the XCFramework.
 
 ```swift

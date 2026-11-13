@@ -25,7 +25,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a `MintlayerWalletBindings.xcframework` (arm64 device, arm64 simulator)
   from the same pinned core rev, and the root `Package.swift`
   exposes an SPM binary target for consumers. On-simulator acceptance tests
-  replay the public BIP39 vectors through the generated Swift bindings. The generated Kotlin
+  replay the public BIP39 vectors through the generated Swift bindings.
+- bindings: release workflow — pushing a `wallet-bindings-v*` tag builds
+  the Android AAR and the iOS XCFramework from the tagged commit, attaches
+  them with checksums to a GitHub Release, and pins the SPM checksum in
+  the root `Package.swift` to the released artifact. The generated Kotlin
   package is `org.mintlayer.wallet.bindings`; the Swift module is
   `MintlayerWalletBindings`.
 - indexer: cursor (keyset) pagination for api-server v2
