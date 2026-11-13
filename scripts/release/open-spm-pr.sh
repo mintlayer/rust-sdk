@@ -6,6 +6,9 @@
 # to activate SPM resolution for the release. Every step is idempotent so
 # the workflow can be re-run after a transient failure.
 #
+# The branch namespace "pin-spm-checksum-*" is reserved for this script:
+# it force-pushes the branch as disposable bot state on every run.
+#
 # Usage: open-spm-pr.sh <TAG> <VERSION> <XCSUM> <DEFAULT_BRANCH>
 # Requires: GH_TOKEN, GITHUB_REPOSITORY (provided by Actions).
 set -euo pipefail
@@ -27,7 +30,13 @@ git config user.email "hello@mintlayer.org"
 git fetch origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
 if ! git merge-base --is-ancestor "refs/tags/${TAG}" "origin/${DEFAULT_BRANCH}"; then
   # Workflow-command values need %-/CR-/LF-escaping to stay one annotation.
-  esc() { printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g'; }
+  esc() {
+    local s="$1"
+    s="${s//%/%25}"
+    s="${s//$'\r'/%0D}"
+    s="${s//$'\n'/%0A}"
+    printf '%s' "$s"
+  }
   echo "::error::tag $(esc "${TAG}") is not an ancestor of $(esc "${DEFAULT_BRANCH}"); cut the tag from the default branch tip"
   exit 1
 fi
@@ -35,23 +44,35 @@ fi
 git checkout -B "${BRANCH}"
 git add Package.swift
 if git diff --cached --quiet; then
-  # The tag is an ancestor of the default branch, so an empty diff means
-  # the pin is already merged; publishing can proceed without a PR.
-  echo "Package.swift already pinned to this checksum; nothing to do"
-  exit 0
+  # An empty diff is only success if the pin is genuinely present; an
+  # unchanged file could equally mean the substitutions no-op'd on a
+  # drifted Package.swift. Fail closed instead of skipping the pin.
+  if grep -qF "${XCSUM}" Package.swift && grep -qF "${TAG}" Package.swift; then
+    echo "Package.swift already pinned to this checksum; nothing to do"
+    exit 0
+  fi
+  echo "::error::Package.swift did not change and does not carry the expected release tag or checksum"
+  exit 1
 fi
 git commit -m "chore: pin the SPM checksum to ${TAG}"
 
 # Only an OPEN pull request from this repository's own branch counts.
-# A fork PR with a colliding head-branch name must not suppress the
-# genuine bot PR (checksum-spoofing guard).
+# Fork PRs with a colliding head-branch name (same owner via an org repo
+# or otherwise) must not suppress the genuine bot PR. The owner name is
+# validated before it is interpolated into the jq program; repo names
+# cannot contain quotes or backslashes, and this fails closed otherwise.
 owner="${GITHUB_REPOSITORY%%/*}"
-existing_pr="$(gh pr list --head "${BRANCH}" --state open --json number,headRepositoryOwner \
-  --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\")][0].number // empty")"
+if [[ ! "${owner}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
+  echo "::error::unexpected repository owner format: ${owner}"
+  exit 1
+fi
+existing_pr="$(gh pr list --head "${BRANCH}" --state open --limit 200 \
+  --json number,headRepositoryOwner,isCrossRepository \
+  --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false)][0].number // empty")"
 
 # The branch is disposable bot state; force-push keeps re-runs working
 # when the remote branch already exists. It happens after the existence
-# decision so a spoofed PR never references the bot commit.
+# decision so a spoofed fork PR never references the bot commit.
 git push --force origin "${BRANCH}"
 
 if [ -n "${existing_pr}" ]; then

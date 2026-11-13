@@ -171,8 +171,10 @@ Binding releases are tagged `wallet-bindings-vX.Y.Z` (matching the
 `version` in `bindings/Cargo.toml`). Pushing such a tag triggers the
 release workflow, which builds the AAR and the XCFramework from the
 tagged commit, attaches them with a `SHA256SUMS` manifest to the GitHub
-release, and pins the SPM checksum in the root `Package.swift` to the
-released artifact. Consumers never need a Rust toolchain.
+release, and opens a pull request that pins the SPM checksum in the root
+`Package.swift` to the released artifact. A maintainer merges that pin
+PR to activate SPM resolution for the release. Consumers never need a
+Rust toolchain.
 The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded
 in the repository `CHANGELOG.md`.

@@ -3,8 +3,9 @@ name: Release
 # Cutting a release: bump `version` in bindings/Cargo.toml, commit, then
 # tag `wallet-bindings-vX.Y.Z` and push the tag. The workflow builds the
 # Android AAR and the iOS XCFramework from the tagged commit, attaches
-# them (with checksums) to a GitHub Release, and pins the SPM checksum in
-# the root Package.swift to the released artifact.
+# them (with checksums) to a GitHub Release, and opens a checksum-pin PR
+# for the root Package.swift (a maintainer merges it to activate SPM
+# resolution).
 
 on:
   push:
@@ -41,7 +42,9 @@ jobs:
           add-to-path: false
 
       - name: Export NDK environment
-        run: echo "ANDROID_NDK_HOME=${{ steps.ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+        env:
+          NDK_PATH: ${{ steps.ndk.outputs.ndk-path }}
+        run: echo "ANDROID_NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
@@ -109,9 +112,12 @@ jobs:
 
       - name: Verify tag matches the crate version
         run: |
-          case "$TAG" in
-            *'&'*|*'|'*|*';'*) echo "::error::tag contains characters unusable in this workflow"; exit 1 ;;
-          esac
+          # Positive validation: everything downstream (sed programs,
+          # commit message, PR title/body) interpolates TAG.
+          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag does not match wallet-bindings-v<semver>"
+            exit 1
+          fi
           VERSION="${TAG#wallet-bindings-v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           declared=$(grep -m1 '^version = ' bindings/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
@@ -145,7 +151,7 @@ jobs:
       - name: Pin the SPM checksum to the released artifact
         run: |
           xcsum=$(grep 'MintlayerWalletBindings.xcframework.zip' dist/SHA256SUMS | awk '{print $1}')
-          if [ ${#xcsum} -ne 64 ] || [ "$xcsum" = "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+          if [[ ! "$xcsum" =~ ^[0-9a-f]{64}$ ]] || [ "$xcsum" = "0000000000000000000000000000000000000000000000000000000000000000" ]; then
             echo "::error::refusing to release with an invalid xcframework checksum"
             exit 1
           fi
@@ -153,6 +159,9 @@ jobs:
             -e "s|let releaseTag = \"wallet-bindings-v[^\"]*\"|let releaseTag = \"$TAG\"|" \
             -e "s|checksum: \"[0-9a-f]*\"|checksum: \"$xcsum\"|" \
             Package.swift
+          # The substitutions must actually land; a no-op sed on a drifted
+          # Package.swift must fail the release rather than skip the pin.
+          grep -F "$xcsum" Package.swift >/dev/null
           grep -E "releaseTag|checksum" Package.swift
           echo "XCSUM=$xcsum" >> "$GITHUB_ENV"
 
