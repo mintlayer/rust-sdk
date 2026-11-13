@@ -37,6 +37,9 @@ case "$1 $2" in
   "merge-base --is-ancestor") exit "$(cat "${CASE_DIR}/ancestry" 2>/dev/null || echo 1)" ;;
   "diff --cached") [ "$(cat "${CASE_DIR}/staged_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "diff --quiet") [ "$(cat "${CASE_DIR}/default_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
+  "rev-parse --is-shallow-repository") echo "false" ;;
+  "rev-parse HEAD") echo "git $*" >> "${LOG}"; cat "${CASE_DIR}/head_commit" ;;
+  rev-parse\ refs/tags/*) cat "${CASE_DIR}/tag_commit" ;;
   "checkout -B")
     cp "${CASE_DIR}/package_swift" "$(dirname "$0")/repo/Package.swift"
     exit 0 ;;
@@ -83,6 +86,8 @@ set_fixtures() {
   printf '%s' "$3" > "${TMP}/package_swift"
   cp "${TMP}/$4" "${TMP}/existing_pr"
   printf '%s' "${5:-1}" > "${TMP}/default_diff"
+  printf 'tagcommitsha' > "${TMP}/head_commit"
+  printf 'tagcommitsha' > "${TMP}/tag_commit"
 }
 
 # assert_no_mutations: fail-closed cases must not push or open PRs.
@@ -95,15 +100,17 @@ assert_no_mutations() {
 }
 
 # run_case <name> <expected_exit> [repository] [default_branch] [xcsum]
+#   [version] [tag]
 run_case() {
   local name="$1" expected="$2" repo="${3:-mintlayer/rust-sdk}"
   local branch="${4:-main}" xcsum="${5:-${XCSUM}}" actual=0
+  local version="${6:-1.2.3}" tag="${7:-wallet-bindings-v1.2.3}"
   : > "${LOG}"
   ( cd "${STUBS}/repo" && \
     PATH="${STUBS}:${PATH}" \
     GITHUB_REPOSITORY="${repo}" \
     CASE_DIR="${TMP}" \
-    bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${xcsum}" "${branch}" \
+    bash "${UNDER_TEST}" "${tag}" "${version}" "${xcsum}" "${branch}" \
       > "${OUT}" 2>&1 ) || actual=$?
   LOG_CONTENTS="$(cat "${LOG}")"
   if [ "${actual}" = "${expected}" ]; then
@@ -153,6 +160,7 @@ if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
 else
   ok "no create when pinned"
 fi
+assert_no_mutations
 
 # 4. Empty diff + pin absent -> fail closed.
 set_fixtures 0 0 "${NOT_PINNED}" pr.none
@@ -178,6 +186,7 @@ assert_no_mutations
 # -> short-circuit success even though the checkout diff is non-empty.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none 0
 run_case "already-merged pin exits 0" 0
+assert_no_mutations
 
 # 6. Open same-repo PR against main -> detected, no duplicate create.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
@@ -228,6 +237,31 @@ assert_no_mutations
 # 12. Malformed XCSUM -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid checksum fails" 1 "mintlayer/rust-sdk" main "xyz"
+
+# 13. HEAD is not the tagged commit -> fail closed, no push.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'othercommitsha' > "${TMP}/head_commit"
+run_case "HEAD differs from tag fails" 1
+printf 'tagcommitsha' > "${TMP}/head_commit"
+
+# 14. All-zero checksum -> fail closed before any fetch.
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "all-zero checksum fails" 1 "mintlayer/rust-sdk" main \
+  "0000000000000000000000000000000000000000000000000000000000000000"
+
+# 15. VERSION that is not semver -> fail closed before any fetch.
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "invalid version fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2
+
+# 16. TAG not matching the release pattern -> fail closed before fetch.
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "invalid tag (no patch) fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2 "wallet-bindings-v1.2"
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "invalid tag (wrong prefix) fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2.3 "evil-wallet-bindings-v1.2.3"
+
+# 17. Default branch inside the reserved namespace -> fail closed.
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "reserved-namespace default branch fails" 1 "mintlayer/rust-sdk" "pin-spm-checksum-1.2.3"
 assert_no_mutations
 
 # Static check: the TAG regex must be byte-identical in every copy

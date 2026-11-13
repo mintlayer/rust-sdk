@@ -49,6 +49,12 @@ if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
   echo "::error::unexpected default branch format: $(esc "${DEFAULT_BRANCH}")"
   exit 1
 fi
+# The default branch must never live in the reserved bot namespace: a
+# force-push there would rewind main instead of a disposable branch.
+if [[ "${DEFAULT_BRANCH}" == "${BRANCH}" || "${DEFAULT_BRANCH}" == pin-spm-checksum-* ]]; then
+  echo "::error::default branch must not use the reserved pin-spm-checksum-* namespace"
+  exit 1
+fi
 owner="${GITHUB_REPOSITORY%%/*}"
 if [[ ! "${owner}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
   echo "::error::unexpected repository owner format: $(esc "${owner}")"
@@ -59,11 +65,13 @@ git config user.name "mintlayer-release-bot"
 git config user.email "hello@mintlayer.org"
 
 # The tag must sit on the default branch's history; otherwise the pin PR
-# would carry unrelated commits. Fail loudly before any push. Fetch with
-# an explicit full-history refspec so the ancestry check sees the real
-# graph (the release checkout is shallow by default).
-git fetch --unshallow origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}" 2>/dev/null \
-  || git fetch origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+# would carry unrelated commits. Fail loudly before any push. Unshallow
+# only when needed, and keep stderr visible for genuine fetch failures.
+if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+  git fetch --unshallow origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+else
+  git fetch origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+fi
 if ! git merge-base --is-ancestor "refs/tags/${TAG}" "origin/${DEFAULT_BRANCH}"; then
   echo "::error::tag $(esc "${TAG}") is not an ancestor of $(esc "${DEFAULT_BRANCH}"); cut the tag from the default branch tip"
   exit 1
@@ -127,5 +135,6 @@ else
 
 Checksum: \`${XCSUM}\`
 
+The GitHub release for this tag is published before this PR is opened.
 Merge to activate."
 fi

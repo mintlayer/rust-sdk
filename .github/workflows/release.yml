@@ -136,13 +136,15 @@ jobs:
       pull-requests: write
     env:
       TAG: ${{ github.ref_name }}
-      VERSION: ""
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           # The ancestry check in open-spm-pr.sh needs the full graph; a
           # shallow clone would reduce it to a tip-equality check.
           fetch-depth: 0
+          # Keep the write-scoped token off disk for the whole job; the
+          # pin-PR step authenticates its push via `gh auth setup-git`.
+          persist-credentials: false
 
       - name: Verify tag matches the crate version
         run: |
@@ -154,7 +156,7 @@ jobs:
           fi
           VERSION="${TAG#wallet-bindings-v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          declared=$(grep -m1 '^version = ' bindings/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          declared=$(grep -m1 '^version = ' bindings/Cargo.toml | sed 's/version = "\(.*\)"/\1/' | tr -d '[:cntrl:]')
           if [ "$declared" != "$VERSION" ]; then
             # Plain log lines, not a workflow annotation: $declared comes
             # from the repo at the tag and is not %-escaped here.
@@ -202,14 +204,10 @@ jobs:
           # Package.swift must fail the release rather than skip the pin.
           grep -F "$xcsum" Package.swift >/dev/null
           grep -F "let releaseTag = \"$TAG\"" Package.swift >/dev/null
-          grep -E "releaseTag|checksum" Package.swift
+          # Neutralize a leading '::' so a crafted Package.swift line
+          # cannot forge workflow annotations in this log.
+          grep -E "releaseTag|checksum" Package.swift | sed 's/^::/[::/'
           echo "XCSUM=$xcsum" >> "$GITHUB_ENV"
-
-      - name: Open the SPM checksum-pin PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: scripts/release/open-spm-pr.sh "$TAG" "$VERSION" "$XCSUM" "$DEFAULT_BRANCH"
 
       - name: Create the GitHub release
         env:
@@ -245,3 +243,16 @@ jobs:
             dist/swift-sources/MintlayerWalletBindings.swift \
             --title "Mobile bindings $TAG" \
             --notes "$notes"
+
+      - name: Open the SPM checksum-pin PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Runs after the release exists: the pin PR body references the
+          # published artifact, and merging before publication would
+          # point SPM at a nonexistent release.
+          # The checkout no longer persists a token; give git a credential
+          # helper backed by GH_TOKEN for the script's force-push.
+          gh auth setup-git
+          scripts/release/open-spm-pr.sh "$TAG" "$VERSION" "$XCSUM" "$DEFAULT_BRANCH"
