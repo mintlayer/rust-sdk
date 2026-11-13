@@ -173,16 +173,18 @@ tagged commit, attaches them with a `SHA256SUMS` manifest to the GitHub
 release, and then opens a pull request that pins the SPM checksum in the
 root `Package.swift` to the released artifact. The release exists before
 the pin PR is opened; a maintainer merges that pin PR to activate SPM
-resolution for the release. The `ci.yml` "Pin ordering" gate enforces
-release order on the `pin-spm-checksum-*` branch namespace: pull
-requests or pushes whose head branch carries a checksum pin are
-refused unless they advance the release currently pinned on the
-default branch. On pull_request events the gate code is checked out
-from the base branch (PR content cannot alter the enforcement logic);
-on push events the pushed branch's code runs with ordinary branch-CI
-privilege. Other (non-namespace) edits to `Package.swift` are NOT
-order-checked by CI — they rely on review and branch protection on
-the default branch. Recommended hardening: protect the
+resolution for the release. The `ci.yml` "Pin ordering" gate applies
+to every pull request or push that edits `Package.swift`, whatever
+the head branch is named: the pinned checksum must match the
+`SHA256SUMS` published for the release the pin names (an unverifiable
+pin would strand every SPM consumer on a resolution failure), and the
+pin must advance the release currently on the default branch — a
+rewind or same-version repair is refused. Heads on the reserved
+`pin-spm-checksum-*` namespace additionally must pin exactly the
+release their branch name declares. On pull_request events the gate
+code is checked out from the base branch (PR content cannot alter the
+enforcement logic); on push events the pushed branch's code runs with
+ordinary branch-CI privilege. Recommended hardening: protect the
 `pin-spm-checksum-*` branch namespace (restrict who may push it) — bot pin PRs opened with the workflow token emit no
 pull_request CI events, so namespace protection plus the creation-time
 rewind guard are the controls for them. Consumers never need a

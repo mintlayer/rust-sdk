@@ -4,12 +4,15 @@
 # pinned on the default branch (same-version repairs are manual: the
 # rewind guard in open-spm-pr.sh refuses to create them).
 #
-# Usage: check-pin-order.sh <BASE_BRANCH> <EXPECTED_TAG> [INCOMING_REF]
+# Usage: check-pin-order.sh <BASE_BRANCH> [EXPECTED_TAG] [INCOMING_REF]
 # Run from the repo root in the PR checkout; LC_ALL=C is enforced
-# internally. EXPECTED_TAG (derived by ci.yml from the reserved bot
-# branch name) is required: strict mode requires the incoming checkout
+# internally. With EXPECTED_TAG (derived by ci.yml from the reserved
+# bot branch name), strict mode requires the incoming checkout
 # (INCOMING_REF, else the working tree) to carry exactly that
-# assignment and no other pin-bearing line.
+# assignment. With EXPECTED_TAG empty the script enforces pin
+# structure and order only; the caller must then bind the incoming
+# checksum to the release it names (ci.yml checks it against the
+# release's published SHA256SUMS).
 set -euo pipefail
 export LC_ALL=C
 
@@ -20,14 +23,14 @@ source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 source "${BASH_SOURCE[0]%/*}/semver.sh"
 
 BASE_BRANCH="${1:?base branch required}"
-EXPECTED_TAG="${2:?expected tag required}"
+EXPECTED_TAG="${2-}"
 INCOMING_REF="${3:-}"
 if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   || [[ "${BASE_BRANCH}" == pin-spm-checksum-* ]]; then
   echo "::error::unexpected base branch: $(esc "${BASE_BRANCH}")"
   exit 1
 fi
-if [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+if [ -n "${EXPECTED_TAG}" ] && [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::unexpected expected tag: $(esc "${EXPECTED_TAG}")"
   exit 1
 fi
@@ -46,11 +49,17 @@ else
   fi
   normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
 fi
-# Strict mode (EXPECTED_TAG is required; ci.yml derives it from the
+# Strict mode (EXPECTED_TAG non-empty; ci.yml derives it from the
 # reserved bot branch name): the normalized code must contain exactly
 # that assignment and NO other releaseTag- or checksum-bearing line,
-# so comment/nesting text tricks fail closed.
-expected_lines="$(printf '%s\n' "${normalized_in}" | grep -cF -x -- "let releaseTag = \"${EXPECTED_TAG}\"" || true)"
+# so comment/nesting text tricks fail closed. Ordering-only mode
+# (EXPECTED_TAG empty) skips the tag-equality count; the shared
+# structural counts below still apply.
+if [ -n "${EXPECTED_TAG}" ]; then
+  expected_lines="$(printf '%s\n' "${normalized_in}" | grep -cF -x -- "let releaseTag = \"${EXPECTED_TAG}\"" || true)"
+else
+  expected_lines="1"
+fi
 # Anchored counts: the URL line interpolates \(releaseTag), so a
 # substring 'releaseTag' count would double-count the real shape.
 release_tag_lines="$(printf '%s\n' "${normalized_in}" | grep -cE '^let releaseTag = ' || true)"
@@ -69,6 +78,12 @@ if [[ ! "${incoming_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9
   exit 1
 fi
 
+# Refresh origin/<base> so the comparison reflects the branch as of
+# now, not the checkout snapshot: a pin PR merged while this gate is
+# in flight must be visible before ordering is decided (a stale view
+# could pass a rewind). Fatal on failure.
+git fetch origin "+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}" \
+  || { echo "::error::cannot refresh origin/${BASE_BRANCH}"; exit 1; }
 origin_swift="$(git show "origin/${BASE_BRANCH}:Package.swift" 2>/dev/null)" \
   || { echo "::error::cannot read origin/${BASE_BRANCH}:Package.swift"; exit 1; }
 origin_code="$(strip_swift_comments "${origin_swift}")"

@@ -233,6 +233,8 @@ while IFS=$'\t' read -r old_pr old_branch; do
   [ -n "${old_pr}" ] || continue
   [ "${old_branch}" = "${BRANCH}" ] && continue
   old_version="${old_branch#pin-spm-checksum-}"
+  # Defensive: the jq filter already excludes BRANCH itself, so a
+  # same-version row should be unreachable; skip rather than mis-handle.
   if [ "${old_version}" = "${VERSION}" ]; then continue; fi
   if [[ ! "${old_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
     echo "::error::open pin PR #${old_pr} carries an unparseable version: $(esc "${old_version}")"
