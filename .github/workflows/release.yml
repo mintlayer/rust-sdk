@@ -154,21 +154,24 @@ jobs:
             Package.swift
           grep -E "releaseTag|checksum" Package.swift
 
-      - name: Push the checksum update to the default branch
+      - name: Open the SPM checksum-pin PR
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # Branch protection on the default branch rejects direct pushes
+          # (GH013), so the checksum pin lands via a pull request that a
+          # maintainer merges to activate SPM resolution for the release.
+          BRANCH="pin-spm-checksum-${VERSION}"
           git config user.name "mintlayer-release-bot"
           git config user.email "hello@mintlayer.org"
+          git checkout -B "$BRANCH"
           git add Package.swift
-          if git diff --cached --quiet; then
-            echo "Package.swift already pinned to this checksum"
-          else
-            git commit -m "chore: pin the SPM checksum to $TAG"
-          fi
-          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
-          git fetch origin "$DEFAULT_BRANCH"
-          # Non-fast-forward = the tag was not cut from the default branch
-          # tip; that is a release-process error and must fail loudly.
-          git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+          git commit -m "chore: pin the SPM checksum to $TAG"
+          git push origin "$BRANCH"
+          gh pr create \
+            --head "$BRANCH" \
+            --title "chore: pin the SPM checksum to $TAG" \
+            --body "Attaches the released XCFramework checksum to the root Package.swift so SPM resolves the $TAG artifact. Merge to activate."
 
       - name: Create the GitHub release
         env:
