@@ -98,7 +98,7 @@ pub enum BindingsError {
         detail: String,
     },
     /// A message could not be signed.
-    #[error("failed to sign detail: {detail}")]
+    #[error("failed to sign message: {detail}")]
     MessageSigning {
         /// Why signing failed.
         detail: String,

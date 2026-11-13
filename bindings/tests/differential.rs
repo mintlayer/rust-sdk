@@ -794,8 +794,8 @@ fn dispatch(
             let inputs = blobs_arg(args, "inputs", &context)?;
             let destinations = opt_strings_arg(args, "input_destinations", &context)?
                 .into_iter()
-                .map(|value| value.expect("destinations are present in fixtures"))
-                .collect::<Vec<_>>();
+                .map(|value| value.ok_or_else(|| format!("{context}: missing input destination")))
+                .collect::<Result<Vec<_>, _>>()?;
             let outputs = blobs_arg(args, "outputs", &context)?;
             let network = network_arg(args, &context)?;
             // The tolerance is recorded per case by the fixture generator
@@ -1086,8 +1086,8 @@ fn dispatch(
             let intent = blob_arg(args, "encoded_signed_intent", &context)?;
             let destinations = opt_strings_arg(args, "input_destinations", &context)?
                 .into_iter()
-                .map(|value| value.expect("intent destinations are present in fixtures"))
-                .collect::<Vec<_>>();
+                .map(|value| value.ok_or_else(|| format!("{context}: missing intent destination")))
+                .collect::<Result<Vec<_>, _>>()?;
             let network = network_arg(args, &context)?;
             expect_null(result, &context)?;
             verify_transaction_intent(message, intent, destinations, network)?;

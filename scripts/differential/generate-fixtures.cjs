@@ -53,6 +53,9 @@ function deterministicMnemonics(count) {
     // 128-bit entropy => 8-bit checksum: the first byte of SHA-256(entropy).
     const checksumFirstByte = crypto.createHash("sha256").update(entropy).digest()[0];
     const bits = Buffer.concat([entropy, Buffer.from([checksumFirstByte])]); // 128 + 8 bits; 132 needed
+    if (bits.length !== Math.ceil(132 / 8)) {
+      throw new Error(`unexpected packed mnemonic length: ${bits.length}`);
+    }
     const indices = [];
     for (let bit = 0; bit < 132; bit += 11) {
       let index = 0;
@@ -72,7 +75,7 @@ async function loadWasm() {
   const lib = require("@mintlayer/wasm-lib");
   try {
     await lib.default();
-  } catch {
+  } catch (initError) {
     const wasmPath = path.join(
       path.dirname(require.resolve("@mintlayer/wasm-lib/package.json")),
       "wasm_wrappers_bg.wasm",
@@ -80,7 +83,9 @@ async function loadWasm() {
     try {
       await lib.default(new Response(fs.readFileSync(wasmPath), { headers: { "Content-Type": "application/wasm" } }));
     } catch (error) {
-      throw new Error(`failed to initialize ${wasmPath}: ${error.message}`);
+      throw new Error(
+        `failed to initialize ${wasmPath}: ${error.message} (initial attempt: ${initError.message})`,
+      );
     }
   }
   return lib;
@@ -139,8 +144,7 @@ class Recorder {
 }
 
 async function main() {
-  const lib = await loadWasm();
-  const wasmLibMain = require.resolve("@mintlayer/wasm-lib");
+    const wasmLibMain = require.resolve("@mintlayer/wasm-lib");
   const installedVersion = JSON.parse(
     fs.readFileSync(path.join(path.dirname(wasmLibMain), "package.json"), "utf8"),
   ).version;
@@ -149,6 +153,7 @@ async function main() {
       `installed @mintlayer/wasm-lib is ${installedVersion}, expected ${WASM_LIB_VERSION}`,
     );
   }
+  const lib = await loadWasm();
   const rec = new Recorder();
   const networks = ["Mainnet", "Testnet"];
   const net = (name) => lib.Network[name];
@@ -338,12 +343,12 @@ async function main() {
           toTotalSupply(args.total_supply),
           args.supply_amount === null ? null : lib.Amount.from_atoms(args.supply_amount),
           args.is_token_freezable === "Yes" ? lib.FreezableToken.Yes : lib.FreezableToken.No,
-          BigInt(1000), n];
+          BigInt(args.current_block_height), n];
       case "encode_output_issue_nft":
         return [args.token_id, args.authority, args.name, args.ticker, args.description,
           Buffer.from(args.media_hash, "hex"),
           args.creator === null ? null : Buffer.from(args.creator, "hex"), opt("media_uri"),
-          opt("icon_uri"), opt("additional_metadata_uri"), BigInt(1000), n];
+          opt("icon_uri"), opt("additional_metadata_uri"), BigInt(args.current_block_height), n];
       default:
         throw new Error(`unmapped output variant: ${args.variant}`);
     }
@@ -640,6 +645,11 @@ async function main() {
   fs.writeFileSync(outFile, JSON.stringify({
     wasm_lib_version: WASM_LIB_VERSION,
     generated_by: "scripts/differential/generate-fixtures.cjs",
+    // Every mnemonic and key in this fixture is PUBLIC: derived
+    // deterministically from constants in the generator (or the standard
+    // BIP39 test vector). Do NOT use any of them in a real wallet — anyone
+    // running this script holds the same keys.
+    public_test_keys_only: true,
     mnemonics: mnemonics.length,
     cases: rec.cases,
   }, null, 1));

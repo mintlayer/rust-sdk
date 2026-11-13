@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: kotlin-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   aar:
     name: Build AAR and run on-device acceptance (emulator)
