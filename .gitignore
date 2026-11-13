@@ -12,8 +12,6 @@ tarpaulin-report.html
 *.swo
 .DS_Store
 
-# ── misc ──────────────────────────────────────────────────────────────────────
-
 # ── secrets: never commit credentials or key material ────────────────────────
 .env
 .env.*

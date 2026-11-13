@@ -38,7 +38,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::tag does not match wallet-bindings-v<semver>"
             exit 1
           fi
@@ -104,7 +104,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::tag does not match wallet-bindings-v<semver>"
             exit 1
           fi
@@ -151,7 +151,7 @@ jobs:
         run: |
           # Positive validation: everything downstream (sed programs,
           # commit message, PR title/body) interpolates TAG.
-          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::tag does not match wallet-bindings-v<semver>"
             exit 1
           fi

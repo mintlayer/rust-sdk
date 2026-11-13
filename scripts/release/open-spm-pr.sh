@@ -35,11 +35,11 @@ esc() {
 
 # Mirror the workflow's validation so direct/manual invocations get the
 # same fail-closed guarantees as the release run.
-if [[ ! "${TAG}" =~ ^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+if [[ ! "${TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::tag does not match wallet-bindings-v<semver>"
   exit 1
 fi
-if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+if [[ ! "${VERSION}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::version does not match <semver>"
   exit 1
 fi
@@ -57,6 +57,10 @@ if [[ "${DEFAULT_BRANCH}" == pin-spm-checksum-* ]]; then
   echo "::error::default branch must not use the reserved pin-spm-checksum-* namespace"
   exit 1
 fi
+if [ -z "${GITHUB_REPOSITORY:-}" ]; then
+  echo "::error::GITHUB_REPOSITORY is not set"
+  exit 1
+fi
 owner="${GITHUB_REPOSITORY%%/*}"
 if [[ ! "${owner}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
   echo "::error::unexpected repository owner format: $(esc "${owner}")"
@@ -65,7 +69,7 @@ fi
 
 # The remaining git/grep logic assumes the repository root; enforce it
 # before touching the checkout's git config.
-if [ ! -d .git ] || [ ! -f Package.swift ]; then
+if [ ! -e .git ] || [ ! -f Package.swift ]; then
   echo "::error::run this script from the repository root"
   exit 1
 fi
@@ -133,10 +137,15 @@ fi
 # The default branch carrying an ACTIVE pin for a NEWER-or-equal
 # release means this invocation would rewind that pin; refuse. Older
 # active pins are the normal forward-release state and proceed.
-origin_pin_tag="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
+origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" \
+  || { echo "::error::cannot read origin/${DEFAULT_BRANCH}:Package.swift"; exit 1; }
+# Only real code lines constitute the pin: comment lines are ignored so
+# a decoy literal in a comment cannot flip the guard's verdict.
+origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//')"
+origin_pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' \
   | grep -oE 'v[0-9][^"]*' || true)"
-origin_pin_sum="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
+origin_pin_sum="$(printf '%s\n' "${origin_code}" \
   | grep -oE 'checksum: "[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' || true)"
 origin_pin_sum_raw="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
   | grep -oE 'checksum: "[^"]*"' | grep -oE '"[^"]*"' | tr -d '"' | head -1 || true)"
@@ -148,7 +157,7 @@ if [ "${origin_pin_active}" = "1" ]; then
   # An active (non-placeholder) pin requires a parsable tag line; a
   # missing/mangled tag line is itself a fail-closed state.
   origin_version="${origin_pin_tag#v}"
-  if [ -z "${origin_pin_tag}" ] || [[ ! "${origin_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+  if [ -z "${origin_pin_tag}" ] || [[ ! "${origin_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
     echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
     exit 1
   fi
@@ -179,9 +188,9 @@ if [ "${origin_pin_active}" = "1" ]; then
         echo -1; return
       elif [[ "${y}" =~ ^[0-9]+$ ]]; then
         echo 1; return
-      elif [[ "${x^^}" < "${y^^}" ]]; then
+      elif [[ "${x}" < "${y}" ]]; then
         echo -1; return
-      elif [[ "${x^^}" > "${y^^}" ]]; then
+      elif [[ "${x}" > "${y}" ]]; then
         echo 1; return
       fi
     done
@@ -205,7 +214,12 @@ if [ "${origin_pin_active}" = "1" ]; then
     done
     semver_prerelease_cmp "${ap}" "${bp}"
   }
-  if [ "$(semver_cmp "${VERSION}" "${origin_version}")" -le 0 ]; then
+  cmp="$(semver_cmp "${VERSION}" "${origin_version}")"
+  if [[ ! "${cmp}" =~ ^-?[012]$ ]]; then
+    echo "::error::semver comparison failed for ${VERSION} against ${origin_version}"
+    exit 1
+  fi
+  if [ "${cmp}" -le 0 ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi

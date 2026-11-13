@@ -22,12 +22,12 @@ esc() {
 }
 
 # Mirror the workflow's validation so direct invocations fail closed.
-if [[ ! "${TAG}" =~ ^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+if [[ ! "${TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::tag does not match wallet-bindings-v<semver>"
   exit 1
 fi
-if [[ ! "${XCSUM}" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "::error::checksum is not 64 lowercase hex characters"
+if [[ ! "${XCSUM}" =~ ^[0-9a-f]{64}$ ]] || [ "${XCSUM//0/}" = "" ]; then
+  echo "::error::checksum is not 64 lowercase hex characters (all-zero refused)"
   exit 1
 fi
 if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
@@ -36,17 +36,32 @@ if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   exit 1
 fi
 
-pin_sum="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null \
-  | grep -oE 'checksum: "[0-9a-f]{64}"' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
-# Anchor to the releaseTag assignment line: the file header comment also
-# contains a wallet-bindings-vX.Y.Z literal and must not be matched.
-pin_tag="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null \
-  | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' | head -1 \
-  | grep -oE 'wallet-bindings-v[^"]*' || true)"
+origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" \
+  || { echo "::error::cannot read origin/${DEFAULT_BRANCH}:Package.swift"; exit 1; }
+# Only real code lines constitute the pin: comment lines are ignored so
+# a decoy literal in a comment cannot flip the guard's verdict.
+origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//')"
+
+pin_tag_matches="$(printf '%s\n' "${origin_code}" \
+  | grep -cE '^[[:space:]]*let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
+if [ "${pin_tag_matches}" != "1" ]; then
+  echo "::error::expected exactly one releaseTag assignment on ${DEFAULT_BRANCH}, found ${pin_tag_matches}"
+  exit 1
+fi
+pin_sum_matches="$(printf '%s\n' "${origin_code}" \
+  | grep -cE '^[[:space:]]*checksum: "[0-9a-f]{64}"$' || true)"
+if [ "${pin_sum_matches}" != "1" ]; then
+  echo "::error::expected exactly one checksum assignment on ${DEFAULT_BRANCH}, found ${pin_sum_matches}"
+  exit 1
+fi
+pin_tag="$(printf '%s\n' "${origin_code}" \
+  | grep -E '^[[:space:]]*let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
+pin_sum="$(printf '%s\n' "${origin_code}" \
+  | grep -E '^[[:space:]]*checksum: ' | grep -oE '[0-9a-f]{64}')"
 
 # Only a pin for THIS release constrains the refresh; identical
 # checksums make the refresh a harmless no-op.
-if [ "${pin_tag}" = "${TAG}" ] && [ -n "${pin_sum}" ] && [ "${pin_sum}" != "${XCSUM}" ]; then
+if [ "${pin_tag}" = "${TAG}" ] && [ "${pin_sum}" != "${XCSUM}" ]; then
   echo "::error::rebuilt artifacts (checksum $(esc "${XCSUM}")) do not match the pin merged on $(esc "${DEFAULT_BRANCH}") ($(esc "${pin_sum}")); release assets left untouched - repair manually"
   exit 1
 fi

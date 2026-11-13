@@ -377,6 +377,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3-rc.1 1.2.3-rc.1 "${XCSUM}" main \
     > "${OUT}" 2>&1 )
 rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "prerelease after final refused"; else bad "prerelease after final refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
@@ -384,6 +385,7 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 # 29. Final over prerelease (1.2.3 after 1.2.3-rc1) -> allowed forward.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3-rc1"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
@@ -394,6 +396,32 @@ if [ "${rc}" = "0" ] && grep -q "gh pr create" "${LOG}"; then
 else
   bad "final over prerelease proceeds" "exit ${rc}: $(cat "${OUT}")"
 fi
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 29b. Build metadata is excluded from precedence: an origin pin of
+# 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3+meta.b"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3+meta.a 1.2.3+meta.a "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "build-metadata equal precedence refused"; else bad "build-metadata equal precedence refused" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
+
+# 29c. Origin pin without metadata vs incoming with metadata: equal
+# precedence -> refuse.
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3+meta 1.2.3+meta "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "metadata-suffix equal precedence refused"; else bad "metadata-suffix equal precedence refused" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
 # 30. Guard script: same tag + differing checksum -> refuse.
@@ -429,15 +457,27 @@ rc=$?
 if [ "${rc}" = "0" ]; then ok "guard allows forward release"; else bad "guard allows forward release" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
+# 33. Comment decoys claiming THIS tag+checksum while the real code pin
+# differs -> comment stripping makes the guard refuse (fail closed).
+printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "1111111111111111111111111111111111111111111111111111111111111111" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "guard ignores comment decoys"; else bad "guard ignores comment decoys" "exit ${rc}"; fi
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
 # Static check: the TAG regex must be byte-identical in every copy
 # (three occurrences in release.yml, one in the script under test).
-TAG_REGEX='^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
+TAG_REGEX='^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$'
 wf="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/release.yml" || true)"
 sc="$(grep -cF -- "${TAG_REGEX}" "${UNDER_TEST}" || true)"
-if [ "${wf}" = "3" ] && [ "${sc}" = "1" ]; then
-  ok "tag regex identical across all four copies"
+gd="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/guard-release-refresh.sh" || true)"
+if [ "${wf}" = "3" ] && [ "${sc}" = "1" ] && [ "${gd}" = "1" ]; then
+  ok "tag regex identical across all five copies"
 else
-  bad "tag regex identical across all four copies" "release.yml=${wf}, script=${sc}"
+  bad "tag regex identical across all five copies" "release.yml=${wf}, script=${sc}, guard=${gd}"
 fi
 
 echo "passed: ${pass}, failed: ${fail}"
