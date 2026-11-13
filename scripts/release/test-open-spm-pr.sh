@@ -32,10 +32,11 @@ ok() { pass=$((pass + 1)); echo "ok - $1"; }
 # PR-controlled on pull_request runs, so neutralize workflow-command
 # forgery and control characters before echoing.
 sanitize() {
-  # PR-controlled output: neutralize every workflow-command prefix
-  # (::error::, ::notice::, ::group::, ::add-mask::, ...) and control
-  # characters before echoing into the check log.
-  printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037' | sed -E 's/::[a-z][a-z-]*:([^:]|$)/[::\1/g'
+  # PR-controlled output: neutralize every workflow-command prefix —
+  # both ::cmd:: and the parameterized ::cmd key=value:: forms — and
+  # control characters (including LF) before echoing into the log.
+  printf '%s' "$1" | tr -d '\000-\010\011\013\014\016-\037' \
+    | sed -E 's/::[a-z][a-z-]*([ ][^:]*)?::/[::]/g; s/::[a-z][a-z-]*:/[::]/g'
 }
 bad() { fail=$((fail + 1)); echo "NOT OK - $1: $(sanitize "$2")"; }
 
@@ -354,6 +355,70 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "mismatched tag and version fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 9.9.9
 assert_no_mutations
+
+# 27. Mangled checksum line (valid tag, non-hex checksum) -> fail closed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "deadbeef"\n' > "${TMP}/origin_swift"
+run_case "mangled origin checksum fails" 1
+assert_no_mutations
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 28. Prerelease over final (1.2.3-rc.1 after 1.2.3) -> rewind, refused.
+set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3-rc.1" // ...
+checksum: "'"${XCSUM}"'"' pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3-rc.1 1.2.3-rc.1 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "prerelease after final refused"; else bad "prerelease after final refused" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 29. Final over prerelease (1.2.3 after 1.2.3-rc1) -> allowed forward.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3-rc1"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "0" ] && grep -q "gh pr create" "${LOG}"; then
+  ok "final over prerelease proceeds"
+else
+  bad "final over prerelease proceeds" "exit ${rc}: $(cat "${OUT}")"
+fi
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 30. Guard script: same tag + differing checksum -> refuse.
+GUARD="${SCRIPT_DIR}/guard-release-refresh.sh"
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${GUARD}" wallet-bindings-v1.2.3 "1111111111111111111111111111111111111111111111111111111111111111" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "guard refuses mismatched rebuild"; else bad "guard refuses mismatched rebuild" "exit ${rc}"; fi
+
+# 31. Guard script: same tag + identical checksum -> allow.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${GUARD}" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "0" ]; then ok "guard allows identical rebuild"; else bad "guard allows identical rebuild" "exit ${rc}"; fi
+
+# 32. Guard script: older pin on main (forward release) -> allow.
+printf 'let releaseTag = "wallet-bindings-v0.1.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${GUARD}" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "0" ]; then ok "guard allows forward release"; else bad "guard allows forward release" "exit ${rc}"; fi
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
 # Static check: the TAG regex must be byte-identical in every copy
 # (three occurrences in release.yml, one in the script under test).

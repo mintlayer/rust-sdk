@@ -240,15 +240,7 @@ jobs:
           # rebuild is not bit-reproducible, clobbering would desync the
           # published artifacts from the merged checksum. Fail closed
           # before any public mutation; forward releases are unaffected.
-          pin_on_main="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null \
-            | grep -oE 'checksum: "[0-9a-f]{64}"' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
-          pin_tag_on_main="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null \
-            | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' | grep -oE 'v[^"]*' || true)"
-          if [ "$pin_tag_on_main" = "$TAG" ] && [ -n "$pin_on_main" ] \
-            && [ "$pin_on_main" != "$xcsum" ]; then
-            echo "::error::rebuilt artifacts (checksum ${xcsum}) do not match the pin merged on ${DEFAULT_BRANCH} (${pin_on_main}); release assets left untouched - repair manually"
-            exit 1
-          fi
+          scripts/release/guard-release-refresh.sh "$TAG" "$XCSUM" "$DEFAULT_BRANCH"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG already exists; refreshing assets"
             gh release upload "$TAG" --clobber \

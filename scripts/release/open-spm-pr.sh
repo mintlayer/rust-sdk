@@ -150,8 +150,41 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
     exit 1
   fi
-  # Semver precedence: numeric triple, then the pre-release rule (a
-  # pre-release is less than the final release).
+  # Semver precedence: numeric triple (10# forces decimal, so leading
+  # zeros cannot octal-flip the verdict), then identifier-wise
+  # pre-release comparison (a pre-release is less than the final;
+  # numeric identifiers are lower than alphanumeric; fewer identifiers
+  # are lower).
+  semver_prerelease_cmp() { # <0 if $1 < $2, 0 equal, >0 if $1 > $2
+    # A final release outranks any pre-release of the same triple.
+    if [ -z "$1" ] && [ -n "$2" ]; then echo 1; return; fi
+    if [ -n "$1" ] && [ -z "$2" ]; then echo -1; return; fi
+    if [ -z "$1" ] && [ -z "$2" ]; then echo 0; return; fi
+    local -a A B
+    IFS='.' read -ra A <<< "${1}"
+    IFS='.' read -ra B <<< "${2}"
+    local i n
+    n=$(( ${#A[@]} > ${#B[@]} ? ${#A[@]} : ${#B[@]} ))
+    for ((i = 0; i < n; i++)); do
+      local x="${A[i]:-}" y="${B[i]:-}"
+      if [ -z "${x}" ] && [ -z "${y}" ]; then continue; fi
+      if [ -z "${x}" ]; then echo -1; return; fi
+      if [ -z "${y}" ]; then echo 1; return; fi
+      if [[ "${x}" =~ ^[0-9]+$ ]] && [[ "${y}" =~ ^[0-9]+$ ]]; then
+        [ "$((10#${x}))" -lt "$((10#${y}))" ] && { echo -1; return; }
+        [ "$((10#${x}))" -gt "$((10#${y}))" ] && { echo 1; return; }
+      elif [[ "${x}" =~ ^[0-9]+$ ]]; then
+        echo -1; return
+      elif [[ "${y}" =~ ^[0-9]+$ ]]; then
+        echo 1; return
+      elif [[ "${x^^}" < "${y^^}" ]]; then
+        echo -1; return
+      elif [[ "${x^^}" > "${y^^}" ]]; then
+        echo 1; return
+      fi
+    done
+    echo 0
+  }
   semver_cmp() { # <0 if $1 < $2, 0 if equal, >0 if $1 > $2
     local a="${1%%-*}" b="${2%%-*}"
     local ap="" bp=""
@@ -162,12 +195,10 @@ if [ "${origin_pin_active}" = "1" ]; then
     read -ra B <<< "${b//[^0-9]/ }"
     local i
     for i in 0 1 2; do
-      [ "${A[i]:-0}" -lt "${B[i]:-0}" ] && { echo -1; return; }
-      [ "${A[i]:-0}" -gt "${B[i]:-0}" ] && { echo 1; return; }
+      [ "$((10#${A[i]:-0}))" -lt "$((10#${B[i]:-0}))" ] && { echo -1; return; }
+      [ "$((10#${A[i]:-0}))" -gt "$((10#${B[i]:-0}))" ] && { echo 1; return; }
     done
-    if [ -z "${ap}" ] && [ -n "${bp}" ]; then echo 1; return; fi
-    if [ -n "${ap}" ] && [ -z "${bp}" ]; then echo -1; return; fi
-    echo 0
+    semver_prerelease_cmp "${ap}" "${bp}"
   }
   if [ "$(semver_cmp "${VERSION}" "${origin_version}")" -le 0 ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
