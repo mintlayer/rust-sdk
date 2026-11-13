@@ -433,7 +433,7 @@ fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
 # 31. Origin pin 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
-# 32.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
+# 32. Origin pin 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
 set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3+meta.a" // ...
 checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3+meta.b"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
