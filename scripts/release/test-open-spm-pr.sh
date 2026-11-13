@@ -82,15 +82,16 @@ set_fixtures() {
   cp "${TMP}/$4" "${TMP}/existing_pr"
 }
 
-# run_case <name> <expected_exit> [repository]
+# run_case <name> <expected_exit> [repository] [default_branch] [xcsum]
 run_case() {
-  local name="$1" expected="$2" repo="${3:-mintlayer/rust-sdk}" actual=0
+  local name="$1" expected="$2" repo="${3:-mintlayer/rust-sdk}"
+  local branch="${4:-main}" xcsum="${5:-${XCSUM}}" actual=0
   : > "${LOG}"
   ( cd "${STUBS}/repo" && \
     PATH="${STUBS}:${PATH}" \
     GITHUB_REPOSITORY="${repo}" \
     CASE_DIR="${TMP}" \
-    bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${xcsum}" "${branch}" \
       > "${OUT}" 2>&1 ) || actual=$?
   LOG_CONTENTS="$(cat "${LOG}")"
   if [ "${actual}" = "${expected}" ]; then
@@ -124,6 +125,12 @@ if [ -n "${push_line}" ] && [ -n "${create_line}" ] && [ "${push_line}" -lt "${c
 else
   bad "push precedes create" "${LOG_CONTENTS}"
 fi
+if grep -q -- "--base main" <<< "${LOG_CONTENTS}" \
+  && grep -q -- "--head pin-spm-checksum-1.2.3" <<< "${LOG_CONTENTS}"; then
+  ok "create pins base and head explicitly"
+else
+  bad "create pins base and head explicitly" "${LOG_CONTENTS}"
+fi
 
 # 3. Empty diff + both substitutions present -> idempotent success.
 set_fixtures 0 0 "${FULLY_PINNED}" pr.none
@@ -142,6 +149,14 @@ run_case "empty diff without pin fails" 1
 # the tag no-op'd; publishing would break the binaryTarget URL).
 set_fixtures 0 1 "${PARTIAL_DRIFT}" pr.none
 run_case "partial drift (checksum new, tag old) fails" 1
+
+# 5b. Mirror drift: new tag but STALE checksum -> fail closed (the sed
+# for the checksum no-op'd; SPM consumers would resolve a stale artifact).
+OLD_XCSUM="1111111111111111111111111111111111111111111111111111111111111111"
+STALE_CKSUM='let releaseTag = "wallet-bindings-v1.2.3" // ...
+checksum: "'"${OLD_XCSUM}"'"'
+set_fixtures 0 1 "${STALE_CKSUM}" pr.none
+run_case "mirror drift (tag new, checksum stale) fails" 1
 
 # 6. Open same-repo PR against main -> detected, no duplicate create.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
@@ -182,6 +197,14 @@ fi
 # 10. Malformed repository owner -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 run_case "invalid owner fails" 1 "bad..owner/rust-sdk"
+
+# 11. Malformed DEFAULT_BRANCH -> fail closed before any fetch.
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "invalid default branch fails" 1 "mintlayer/rust-sdk" $'ma\tin'
+
+# 12. Malformed XCSUM -> fail closed before any fetch.
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "invalid checksum fails" 1 "mintlayer/rust-sdk" main "xyz"
 
 echo "passed: ${pass}, failed: ${fail}"
 [ "${fail}" = "0" ]

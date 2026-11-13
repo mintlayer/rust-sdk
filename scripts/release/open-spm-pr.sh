@@ -20,6 +20,17 @@ DEFAULT_BRANCH="${4:?DEFAULT_BRANCH required}"
 
 BRANCH="pin-spm-checksum-${VERSION}"
 
+# Mirror the workflow's validation so direct/manual invocations get the
+# same fail-closed guarantees as the release run.
+if [[ ! "${TAG}" =~ ^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+  echo "::error::tag does not match wallet-bindings-v<semver>"
+  exit 1
+fi
+if [[ ! "${XCSUM}" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "::error::checksum is not 64 lowercase hex characters"
+  exit 1
+fi
+
 # Workflow-command values need %-/CR-/LF-escaping to stay one annotation.
 esc() {
   local s="$1"
@@ -73,7 +84,7 @@ if [[ ! "${owner}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
   echo "::error::unexpected repository owner format: $(esc "${owner}")"
   exit 1
 fi
-existing_pr="$(gh pr list --head "${BRANCH}" --state open --limit 200 \
+existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
   --json number,headRepositoryOwner,isCrossRepository,baseRefName \
   --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")"
 
