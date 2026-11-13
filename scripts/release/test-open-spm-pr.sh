@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Unit tests for scripts/release/open-spm-pr.sh using stub git/gh on PATH.
+# Unit tests for scripts/release/open-spm-pr.sh and
+# scripts/release/guard-release-refresh.sh using stub git/gh on PATH.
 # Covers: tag-ancestry guard (shallow-aware fetch both ways, git-error
 # disambiguation), HEAD==tag guard, both substitution verifications (pin
 # fully present / either half drifted / absent), already-merged,
@@ -32,11 +33,11 @@ ok() { pass=$((pass + 1)); echo "ok - $1"; }
 # PR-controlled on pull_request runs, so neutralize workflow-command
 # forgery and control characters before echoing.
 sanitize() {
-  # PR-controlled output: neutralize every workflow-command prefix —
-  # both ::cmd:: and the parameterized ::cmd key=value:: forms — and
-  # control characters (including LF) before echoing into the log.
-  printf '%s' "$1" | tr -d '\000-\010\011\013\014\016-\037' \
-    | sed -E 's/::[a-z][a-z-]*([ ][^:]*)?::/[::]/g; s/::[a-z][a-z-]*:/[::]/g'
+  # PR-controlled output: replace every '::' so no workflow command can
+  # survive, per line. LF/CR are intentionally preserved — deleting them
+  # could splice two benign fragments into a new command — and each
+  # resulting line is safe because '::' no longer occurs in it.
+  printf '%s' "$1" | tr -d '\000-\010\011\013\014\016-\037' | sed 's/::/[::]/g'
 }
 bad() { fail=$((fail + 1)); echo "NOT OK - $1: $(sanitize "$2")"; }
 
@@ -107,7 +108,11 @@ set_fixtures() {
   printf 'tagcommitsha' > "${TMP}/head_commit"
   printf 'tagcommitsha' > "${TMP}/tag_commit"
   printf 'false' > "${TMP}/is_shallow"
-  printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+  # Realistic shape: the file header comment also carries a
+  # wallet-bindings-vX.Y.Z literal ahead of the pin line.
+  # shellcheck disable=SC2016  # \n are printf escapes, no expansion
+  printf '// The binary target is attached to the `wallet-bindings-vX.Y.Z`\n// GitHub release; its checksum is updated by the release workflow.\n' > "${TMP}/origin_swift"
+  printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' >> "${TMP}/origin_swift"
 }
 
 # assert_no_mutations: fail-closed cases must not push or open PRs.
@@ -401,8 +406,12 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard refuses mismatched rebuild"; else bad "guard refuses mismatched rebuild" "exit ${rc}"; fi
 
-# 31. Guard script: same tag + identical checksum -> allow.
+# 31. Guard script: same tag + identical checksum (with a header
+# comment whose version literal differs) -> allow.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+# shellcheck disable=SC2016  # \n are printf escapes, no expansion
+printf '// The binary target is attached to the `wallet-bindings-v9.9.9`\n// GitHub release; its checksum is updated by the release workflow.\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "%s"\n' "${XCSUM}" >> "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
   bash "${GUARD}" wallet-bindings-v1.2.3 "${XCSUM}" main \

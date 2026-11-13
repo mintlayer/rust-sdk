@@ -205,9 +205,15 @@ jobs:
           # Package.swift must fail the release rather than skip the pin.
           grep -F "$xcsum" Package.swift >/dev/null
           grep -F "let releaseTag = \"$TAG\"" Package.swift >/dev/null
-          # Neutralize a leading '::' so a crafted Package.swift line
-          # cannot forge workflow annotations in this log.
-          grep -E "releaseTag|checksum" Package.swift | sed 's/^::/[::/'
+          # A second checksum line would silently receive the same pin;
+          # refuse if the file ever gains additional binary targets.
+          if [ "$(grep -c 'checksum:' Package.swift)" != "1" ]; then
+            echo "::error::Package.swift carries more than one checksum line; refusing to pin"
+            exit 1
+          fi
+          # Neutralize every '::' so no crafted Package.swift line can
+          # forge workflow commands (leading or mid-line) in this log.
+          grep -E "releaseTag|checksum" Package.swift | sed 's/::/[::]/g'
           echo "XCSUM=$xcsum" >> "$GITHUB_ENV"
 
       - name: Create the GitHub release

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# LC_ALL=C pins collation for the semver string comparisons below.
+export LC_ALL=C
 # Open (or reuse) the SPM checksum-pin pull request for a release tag.
 #
 # Branch protection on the default branch rejects direct pushes (GH013),
@@ -88,7 +90,7 @@ fi
 merge_rc=0
 git merge-base --is-ancestor "refs/tags/${TAG}" "origin/${DEFAULT_BRANCH}" || merge_rc=$?
 if [ "${merge_rc}" -gt 1 ]; then
-  echo "::error::failed to compare ${TAG} against origin/${DEFAULT_BRANCH} (git exit ${merge_rc}); check the fetch and the tag"
+  echo "::error::failed to compare $(esc "${TAG}") against origin/${DEFAULT_BRANCH} (git exit ${merge_rc}); check the fetch and the tag"
   exit 1
 fi
 if [ "${merge_rc}" -eq 1 ]; then
@@ -100,7 +102,7 @@ fi
 # would be built (and force-pushed) on the wrong base.
 tag_commit="$(git rev-parse "refs/tags/${TAG}^{commit}")"
 if [ "$(git rev-parse HEAD)" != "${tag_commit}" ]; then
-  echo "::error::HEAD is not the tagged commit; run from a checkout of ${TAG}"
+  echo "::error::HEAD is not the tagged commit; run from a checkout of $(esc "${TAG}")"
   exit 1
 fi
 
@@ -190,6 +192,9 @@ if [ "${origin_pin_active}" = "1" ]; then
     local ap="" bp=""
     [[ "$1" == *-* ]] && ap="${1#*-}"
     [[ "$2" == *-* ]] && bp="${2#*-}"
+    # Build metadata is excluded from precedence: strip it from both.
+    ap="${ap%%+*}"
+    bp="${bp%%+*}"
     local -a A B
     read -ra A <<< "${a//[^0-9]/ }"
     read -ra B <<< "${b//[^0-9]/ }"

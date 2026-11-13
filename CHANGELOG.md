@@ -49,7 +49,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   mapped from the api-server error bodies (`{"error": ...}`).
 - `examples/indexer-pagination.rs`: runnable walks for holders, the order
   book, the global transaction listing and pools.
-
 - `node::Error::OutcomeUnknown` / `wallet::Error::OutcomeUnknown`: the
   request was delivered but its outcome could not be confirmed (lost,
   oversized, undecodable or mismatched response, or a timeout while
