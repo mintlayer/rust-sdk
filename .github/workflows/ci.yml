@@ -32,8 +32,11 @@ jobs:
     env:
       LC_ALL: C
     steps:
-      # Check out the BASE ref: the gate code and the current pin state
-      # come from the trusted branch, never from PR-supplied content.
+      # On pull_request events the gate code and the current pin state
+      # come from the trusted base branch; PR content is only ever read
+      # as data. On push events the pushed branch's code runs, which is
+      # ordinary branch-CI privilege (read-only, no secrets) under the
+      # documented force-push risk of the reserved namespace.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref }}
@@ -41,6 +44,8 @@ jobs:
           persist-credentials: false
       - name: Refuse a downgrading pin
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.repository.default_branch }}
           HEAD_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -51,10 +56,6 @@ jobs:
           if [[ ! "$BASE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
             echo "::error::unexpected base branch"
             exit 1
-          fi
-          if ! git diff --name-only "origin/${BASE_REF}...HEAD" | grep -q '^Package.swift$'; then
-            echo "Package.swift untouched; nothing to check"
-            exit 0
           fi
           # The expected tag is derived from the reserved bot branch
           # name (which names the release it pins) and cross-checked
@@ -68,13 +69,24 @@ jobs:
               expected_tag="wallet-bindings-v${HEAD_REF#pin-spm-checksum-}"
               ;;
             *)
-              echo "::error::pin PR must originate from a pin-spm-checksum-* branch"
-              exit 1
+              echo "not a pin branch; nothing to check"
+              exit 0
               ;;
           esac
           if [[ ! "$expected_tag" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::derived tag does not match wallet-bindings-v<semver>"
             exit 1
+          fi
+          # The checkout is the base branch; pull the PR head commit so
+          # the diff below and check-pin-order.sh's data-only read of
+          # the head's Package.swift can see it (push events already
+          # have their SHA locally).
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head"
+          fi
+          if ! git diff --name-only "origin/${BASE_REF}...${HEAD_SHA}" | grep -q '^Package.swift$'; then
+            echo "Package.swift untouched; nothing to check"
+            exit 0
           fi
           # Gate code is the trusted base checkout; the PR head's
           # Package.swift is consumed purely as data via its SHA.

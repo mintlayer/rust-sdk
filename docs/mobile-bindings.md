@@ -174,8 +174,10 @@ release, and then opens a pull request that pins the SPM checksum in the
 root `Package.swift` to the released artifact. The release exists before
 the pin PR is opened; a maintainer merges that pin PR to activate SPM
 resolution for the release. The `ci.yml` "Pin ordering" gate runs on every pull_request or push
-that touches `Package.swift`: the gate code is checked out from the
-base branch (PR content cannot alter the enforcement logic), and a pin
+that touches `Package.swift`. On pull_request events the gate code is
+checked out from the base branch (PR content cannot alter the
+enforcement logic); on push events the pushed branch's code runs with
+ordinary branch-CI privilege. Either way, a pin
 PR that does not advance the pinned release is refused — so other edits
 to `Package.swift` require release-team coordination. Recommended
 hardening: protect the `pin-spm-checksum-*` branch namespace (restrict

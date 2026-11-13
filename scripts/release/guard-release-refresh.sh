@@ -34,6 +34,13 @@ if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   exit 1
 fi
 
+# Refresh origin/<default> so the pin state reflects main as of now,
+# not the checkout snapshot: a pin PR merged while this release run is
+# in flight must be visible before any --clobber upload. Fatal on
+# failure: without an up-to-date view the guard cannot decide.
+git fetch origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}" \
+  || { echo "::error::cannot refresh origin/${DEFAULT_BRANCH}"; exit 1; }
+
 # Only real code lines constitute the pin: block comments, line
 # comments, and their decoy literals are all ignored (shared stripper).
 origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" \

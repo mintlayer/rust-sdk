@@ -4,11 +4,12 @@
 # pinned on the default branch (same-version repairs are manual: the
 # rewind guard in open-spm-pr.sh refuses to create them).
 #
-# Usage: check-pin-order.sh <BASE_BRANCH> [EXPECTED_TAG]
+# Usage: check-pin-order.sh <BASE_BRANCH> <EXPECTED_TAG> [INCOMING_REF]
 # Run from the repo root in the PR checkout; LC_ALL=C is enforced
-# internally. With EXPECTED_TAG (derived by ci.yml from the reserved
-# bot branch name), strict mode additionally requires the PR head to
-# carry exactly that assignment and no other pin-bearing line.
+# internally. EXPECTED_TAG (derived by ci.yml from the reserved bot
+# branch name) is required: strict mode requires the incoming checkout
+# (INCOMING_REF, else the working tree) to carry exactly that
+# assignment and no other pin-bearing line.
 set -euo pipefail
 export LC_ALL=C
 
@@ -26,7 +27,7 @@ if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   echo "::error::unexpected base branch: $(esc "${BASE_BRANCH}")"
   exit 1
 fi
-if [ -n "${EXPECTED_TAG}" ] && [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+if [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::unexpected expected tag: $(esc "${EXPECTED_TAG}")"
   exit 1
 fi
@@ -35,7 +36,7 @@ fi
 # tree (legacy/harness) — always consumed as data by this trusted code.
 if [ -n "${INCOMING_REF}" ]; then
   normalized_in="$(strip_swift_comments "$(git show "${INCOMING_REF}:Package.swift" 2>/dev/null)")" || {
-    echo "::error::cannot read Package.swift from ${INCOMING_REF}"
+    echo "::error::cannot read Package.swift from $(esc "${INCOMING_REF}")"
     exit 1
   }
 else

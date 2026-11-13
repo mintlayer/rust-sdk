@@ -56,6 +56,9 @@ case "$1 $2" in
   "diff --cached") [ "$(cat "${CASE_DIR}/staged_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "diff --quiet") [ "$(cat "${CASE_DIR}/default_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "rev-parse --is-shallow-repository") cat "${CASE_DIR}/is_shallow" ;;
+  "fetch origin")
+    [ "$(cat "${CASE_DIR}/fetch_fails" 2>/dev/null || echo 0)" = "1" ] && exit 1
+    exit 0 ;;
   "rev-parse HEAD") cat "${CASE_DIR}/head_commit" ;;
   "show origin/"*)
     if [ "$(cat "${CASE_DIR}/show_fails" 2>/dev/null || echo 0)" = "1" ]; then
@@ -433,7 +436,6 @@ fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
 # 31. Origin pin 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
-# 32. Origin pin 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
 set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3+meta.a" // ...
 checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3+meta.b"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
@@ -538,26 +540,39 @@ assert_no_mutations
 printf '0' > "${TMP}/show_fails"
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 39. Comment decoys claiming THIS tag+checksum while the real code pin
-# differs -> comment stripping makes the script refuse (fail closed).
-printf '/*\nchecksum: "1111111111111111111111111111111111111111111111111111111111111111"\nlet releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+# 39. Comment decoys inside an unterminated block comment; the real
+# code pin (v1.0.0) follows the block. Correct stripping sees 1.2.3 >
+# 1.0.0 and allows; a stripping regression leaks the decoys (mangled
+# multi-pin state, or >= the incoming version) and refuses.
+printf '/*\nchecksum: "1111111111111111111111111111111111111111111111111111111111111111"\nlet releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v9.9.9"\n*/\nlet releaseTag = "wallet-bindings-v1.0.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
-  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 "1111111111111111111111111111111111111111111111111111111111111111" "${XCSUM}" main \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
     >/dev/null 2>&1 )
 rc=$?
-if [ "${rc}" = "1" ]; then ok "script ignores comment decoys"; else bad "script ignores comment decoys" "exit ${rc}"; fi
+if [ "${rc}" = "0" ]; then ok "script ignores comment decoys"; else bad "script ignores comment decoys" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 40. Comment decoys claiming THIS tag+checksum while the real code pin
-# differs -> comment stripping makes the guard refuse (fail closed).
-printf '/*\nchecksum: "1111111111111111111111111111111111111111111111111111111111111111"\nlet releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+# 40. Same decoy shape for the guard: real v1.0.0 pin follows the
+# block, so the refresh (1.2.3 > 1.0.0) must be allowed.
+printf '/*\nchecksum: "1111111111111111111111111111111111111111111111111111111111111111"\nlet releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v9.9.9"\n*/\nlet releaseTag = "wallet-bindings-v1.0.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
-  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "1111111111111111111111111111111111111111111111111111111111111111" main \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
     >/dev/null 2>&1 )
 rc=$?
-if [ "${rc}" = "1" ]; then ok "guard ignores comment decoys"; else bad "guard ignores comment decoys" "exit ${rc}"; fi
+if [ "${rc}" = "0" ]; then ok "guard ignores comment decoys"; else bad "guard ignores comment decoys" "exit ${rc}"; fi
+
+# 40b. Guard: a failed origin refresh must fail closed (no clobber
+# decision can be made against a stale pin view).
+printf '1' > "${TMP}/fetch_fails"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+printf '0' > "${TMP}/fetch_fails"
+if [ "${rc}" = "1" ]; then ok "guard origin refresh failure fails closed"; else bad "guard origin refresh failure fails closed" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
 # 41. Guard: zero releaseTag assignments -> refuse.
