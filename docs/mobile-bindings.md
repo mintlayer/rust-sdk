@@ -112,8 +112,10 @@ val address = pubkeyToPubkeyhashAddress(receiving0, Network.TESTNET)
 ## Swift (iOS)
 
 The iOS artifact will be an XCFramework covering iOS devices
-(`ios-arm64`) and simulators (`ios-arm64_x86_64-simulator`); it ships with
-the first tagged release (see "Versioning"). Consumers add the repository
+(`ios-arm64`) and Apple Silicon simulators (`ios-arm64_x86_64-simulator`);
+it ships with the first tagged release (see "Versioning"). The Intel
+simulator slice is omitted: recent Xcode releases no longer ship Intel
+simulator runtimes, matching the Rust toolchain. Consumers add the repository
 as an SPM dependency; the generated Swift wrapper is compiled by Swift
 Package Manager against the XCFramework.
 

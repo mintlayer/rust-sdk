@@ -6,8 +6,8 @@
 # that can be found in the LICENSE file.
 
 # Builds the iOS XCFramework for the wallet bindings:
-#   1. cross-compiles the static library for the three required slices
-#      (iOS device arm64, Apple Silicon simulator, Intel simulator)
+#   1. cross-compiles the static library for the two required slices
+#      (iOS device arm64, Apple Silicon simulator)
 #   2. generates the Swift bindings and the C header/modulemap
 #   3. assembles MintlayerWalletBindings.xcframework and zips it
 #
@@ -18,7 +18,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist"
-SLICES=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios-sim)
+# The Intel-simulator slice (x86_64-apple-ios-sim) is omitted: Rust 1.92.0
+# no longer publishes its rust-std for macOS hosts, matching Apple's removal
+# of Intel simulator runtimes from recent Xcode. Intel-Mac developers cannot
+# run recent simulators regardless.
+SLICES=(aarch64-apple-ios aarch64-apple-ios-sim)
 
 command -v cargo >/dev/null || { echo "cargo not found" >&2; exit 1; }
 command -v rustup >/dev/null || { echo "rustup not found" >&2; exit 1; }

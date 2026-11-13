@@ -22,8 +22,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every export except the two VRF-gated stake-pool encoders, which are
   pinned structurally (CI-generated fixtures).
 - bindings: iOS distribution — `scripts/ios/build-xcframework.sh` assembles
-  a `MintlayerWalletBindings.xcframework` (arm64 device, arm64 and x86_64
-  simulators) from the same pinned core rev, and the root `Package.swift`
+  a `MintlayerWalletBindings.xcframework` (arm64 device, arm64 simulator)
+  from the same pinned core rev, and the root `Package.swift`
   exposes an SPM binary target for consumers. On-simulator acceptance tests
   replay the public BIP39 vectors through the generated Swift bindings. The generated Kotlin
   package is `org.mintlayer.wallet.bindings`; the Swift module is
