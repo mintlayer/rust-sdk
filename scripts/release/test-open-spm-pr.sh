@@ -36,6 +36,7 @@ echo "git $*" >> "${LOG}"
 case "$1 $2" in
   "merge-base --is-ancestor") exit "$(cat "${CASE_DIR}/ancestry" 2>/dev/null || echo 1)" ;;
   "diff --cached") [ "$(cat "${CASE_DIR}/staged_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
+  "diff --quiet") [ "$(cat "${CASE_DIR}/default_diff" 2>/dev/null || echo 1)" = "0" ] && exit 0 || exit 1 ;;
   "checkout -B")
     cp "${CASE_DIR}/package_swift" "$(dirname "$0")/repo/Package.swift"
     exit 0 ;;
@@ -74,12 +75,23 @@ echo '[{"number": 9, "headRepositoryOwner": {"login": "evil"}, "isCrossRepositor
 echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": true, "baseRefName": "main"}]' > "${TMP}/pr.fork"
 echo '[{"number": 9, "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "develop"}]' > "${TMP}/pr.wrongbase"
 
-# set_fixtures <ancestry> <staged_diff> <package_swift> <existing_pr>
+# set_fixtures <ancestry> <staged_diff> <package_swift> <existing_pr> [default_diff]
+# default_diff: 0 = Package.swift identical to the default branch (pin merged).
 set_fixtures() {
   printf '%s' "$1" > "${TMP}/ancestry"
   printf '%s' "$2" > "${TMP}/staged_diff"
   printf '%s' "$3" > "${TMP}/package_swift"
   cp "${TMP}/$4" "${TMP}/existing_pr"
+  printf '%s' "${5:-1}" > "${TMP}/default_diff"
+}
+
+# assert_no_mutations: fail-closed cases must not push or open PRs.
+assert_no_mutations() {
+  if grep -q "git push" <<< "${LOG_CONTENTS}" || grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
+    bad "no mutations on failure" "${LOG_CONTENTS}"
+  else
+    ok "no mutations on failure"
+  fi
 }
 
 # run_case <name> <expected_exit> [repository] [default_branch] [xcsum]
@@ -104,6 +116,7 @@ run_case() {
 # 1. Tag not an ancestor of the default branch -> fail loudly.
 set_fixtures 1 1 "${NOT_PINNED}" pr.none
 run_case "non-ancestor tag fails" 1
+assert_no_mutations
 
 # 2. Ancestor + real diff -> success; push issued before create.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
@@ -133,7 +146,7 @@ else
 fi
 
 # 3. Empty diff + both substitutions present -> idempotent success.
-set_fixtures 0 0 "${FULLY_PINNED}" pr.none
+set_fixtures 0 0 "${FULLY_PINNED}" pr.none 1
 run_case "empty diff with pin exits 0" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
   bad "no create when pinned" "${LOG_CONTENTS}"
@@ -144,11 +157,13 @@ fi
 # 4. Empty diff + pin absent -> fail closed.
 set_fixtures 0 0 "${NOT_PINNED}" pr.none
 run_case "empty diff without pin fails" 1
+assert_no_mutations
 
 # 5. Partial drift: new checksum but OLD tag -> fail closed (the sed for
 # the tag no-op'd; publishing would break the binaryTarget URL).
 set_fixtures 0 1 "${PARTIAL_DRIFT}" pr.none
 run_case "partial drift (checksum new, tag old) fails" 1
+assert_no_mutations
 
 # 5b. Mirror drift: new tag but STALE checksum -> fail closed (the sed
 # for the checksum no-op'd; SPM consumers would resolve a stale artifact).
@@ -157,6 +172,12 @@ STALE_CKSUM='let releaseTag = "wallet-bindings-v1.2.3" // ...
 checksum: "'"${OLD_XCSUM}"'"'
 set_fixtures 0 1 "${STALE_CKSUM}" pr.none
 run_case "mirror drift (tag new, checksum stale) fails" 1
+assert_no_mutations
+
+# 5c. Pin already merged: Package.swift identical to the default branch
+# -> short-circuit success even though the checkout diff is non-empty.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none 0
+run_case "already-merged pin exits 0" 0
 
 # 6. Open same-repo PR against main -> detected, no duplicate create.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
@@ -197,14 +218,28 @@ fi
 # 10. Malformed repository owner -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 run_case "invalid owner fails" 1 "bad..owner/rust-sdk"
+assert_no_mutations
 
 # 11. Malformed DEFAULT_BRANCH -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid default branch fails" 1 "mintlayer/rust-sdk" $'ma\tin'
+assert_no_mutations
 
 # 12. Malformed XCSUM -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid checksum fails" 1 "mintlayer/rust-sdk" main "xyz"
+assert_no_mutations
+
+# Static check: the TAG regex must be byte-identical in every copy
+# (three occurrences in release.yml, one in the script under test).
+TAG_REGEX='^wallet-bindings-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
+wf="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/release.yml" || true)"
+sc="$(grep -cF -- "${TAG_REGEX}" "${UNDER_TEST}" || true)"
+if [ "${wf}" = "3" ] && [ "${sc}" = "1" ]; then
+  ok "tag regex identical across all four copies"
+else
+  bad "tag regex identical across all four copies" "release.yml=${wf}, script=${sc}"
+fi
 
 echo "passed: ${pass}, failed: ${fail}"
 [ "${fail}" = "0" ]

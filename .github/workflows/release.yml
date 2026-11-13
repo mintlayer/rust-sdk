@@ -229,7 +229,8 @@ jobs:
             (also in-repo at `SwiftSources/`)
 
           Byte-parity with `@mintlayer/wasm-lib` 1.4.0 is verified by the
-          differential suite on the tagged commit. See
+          differential suite in CI on the pull request that carried this
+          release. See
           `docs/mobile-bindings.md` for usage from Kotlin and Swift.
           EOF
           )
