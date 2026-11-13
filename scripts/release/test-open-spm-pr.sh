@@ -178,9 +178,7 @@ set_fixtures 0 1 "${FULLY_PINNED}" pr.none
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
     > "${OUT}" 2>&1 )
 rc=$?
-echo "CASE2 rc=${rc} OUT=[$(cat "${OUT}")]"
 LOG_CONTENTS="$(cat "${LOG}")"
-echo "CASE2 LOG:"; printf '%s\n' "${LOG_CONTENTS}" | tail -5
 if [ "${rc}" = "0" ]; then ok "case2 exit 0"; else bad "case2 exit" "rc=${rc}"; fi
 if grep -q -- "push --force origin pin-spm-checksum-1.2.3" <<< "${LOG_CONTENTS}"; then
   ok "force-push issued"
@@ -246,7 +244,7 @@ set_fixtures 0 1 "${FULLY_PINNED}" pr.own
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
     > "${OUT}" 2>&1 )
 rc=$?
-echo "DBG7 rc=${rc} OUT=[$(cat "${OUT}")]"
+LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "0" ]; then ok "own open PR detected"; else bad "own open PR detected" "exit ${rc}"; fi
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
   bad "no duplicate create" "${LOG_CONTENTS}"
@@ -534,6 +532,7 @@ printf '1' > "${TMP}/show_fails"
   bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
     > "${OUT}" 2>&1 )
 rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "git show failure fails closed"; else bad "git show failure fails closed" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 printf '0' > "${TMP}/show_fails"

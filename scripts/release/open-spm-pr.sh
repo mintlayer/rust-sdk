@@ -164,14 +164,16 @@ origin_pin_active=0
 if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
   origin_pin_active=1
 fi
-if [ "${origin_pin_active}" = "1" ]; then
-  # An active (non-placeholder) pin requires a parsable tag line; a
-  # missing/mangled tag line is itself a fail-closed state.
+# The release marker must be parsable whenever it is present, active or
+# deactivated: both gates rely on the version for ordering decisions.
+if [ -n "${origin_pin_tag}" ]; then
   origin_version="${origin_pin_tag#v}"
-  if [ -z "${origin_pin_tag}" ] || [[ ! "${origin_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+  if [[ ! "${origin_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
     echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
     exit 1
   fi
+fi
+if [ "${origin_pin_active}" = "1" ]; then
   cmp="$(semver_cmp "${VERSION}" "${origin_version}")"
   if [[ ! "${cmp}" =~ ^-?[012]$ ]]; then
     echo "::error::semver comparison failed for ${VERSION} against ${origin_version}"
@@ -181,6 +183,14 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi
+elif [ "$(printf '%s\n%s\n' "${origin_version:-0.0.0}" "${VERSION}" | sort -V | head -1)" = "${VERSION}" ] \
+  && [ -n "${origin_version}" ]; then
+  # A deactivated (zeroed-checksum) pin whose release marker is
+  # newer-or-equal: main claims ${origin_version} with no active
+  # checksum. Pinning ${VERSION} here would leave the marker and the
+  # checksum in conflict; manual repair required.
+  echo "::error::origin/${DEFAULT_BRANCH} carries a deactivated pin for ${origin_version} (>= ${VERSION}); refusing to pin - repair the default branch manually"
+  exit 1
 elif [ -n "${origin_pin_sum_raw}" ] && [ -z "${origin_pin_sum}" ]; then
   # A checksum line exists but is not 64 lowercase hex: mangled pin.
   echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${origin_pin_sum_raw}")"
@@ -199,7 +209,8 @@ git commit -m "chore: pin the SPM checksum to ${TAG}"
 # program; --paginate keeps the check independent of list windows.
 existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
   --json number,headRepositoryOwner,isCrossRepository,baseRefName \
-  --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")"
+  --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")" \
+  || { echo "::error::failed to list existing pin PRs"; exit 1; }
 
 # Supersede strictly-older open pin PRs and refuse when a strictly
 # NEWER release's pin PR is still open (merging it after this one would
@@ -219,6 +230,10 @@ while IFS=$'\t' read -r old_pr old_branch; do
   [ "${old_branch}" = "${BRANCH}" ] && continue
   old_version="${old_branch#pin-spm-checksum-}"
   if [ "${old_version}" = "${VERSION}" ]; then continue; fi
+  if [[ ! "${old_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+    echo "::error::open pin PR #${old_pr} carries an unparseable version: $(esc "${old_version}")"
+    exit 1
+  fi
   cmp_old="$(semver_cmp "${VERSION}" "${old_version}")"
   if [[ ! "${cmp_old}" =~ ^-?[012]$ ]]; then
     echo "::error::could not compare ${VERSION} against open pin PR #${old_pr} ($(esc "${old_version}"))"
@@ -229,7 +244,7 @@ while IFS=$'\t' read -r old_pr old_branch; do
     exit 1
   fi
   gh pr close "${old_pr}" \
-    --comment "Superseded by #${existing_pr:-this run} for ${TAG}: an older pin must not merge after a newer one."
+    --comment "Superseded by the ${TAG} checksum-pin PR: an older pin must not merge after a newer one."
   superseded="${superseded} #${old_pr}"
 done << OLD_PRS
 ${old_prs}

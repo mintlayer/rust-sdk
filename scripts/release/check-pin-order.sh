@@ -30,10 +30,11 @@ if [ -n "${EXPECTED_TAG}" ] && [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]
   exit 1
 fi
 
-normalized_in="$(strip_swift_comments "$(cat Package.swift 2>/dev/null)")" || {
+if [ ! -r Package.swift ]; then
   echo "::error::cannot read Package.swift"
   exit 1
-}
+fi
+normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
 # Strict mode when the expected tag is known (ci.yml derives it from
 # the reserved bot branch name): the normalized code must contain
 # exactly that assignment and NO other releaseTag- or checksum-bearing
