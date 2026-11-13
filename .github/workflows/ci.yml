@@ -34,10 +34,11 @@ jobs:
       - name: Refuse a downgrading pin
         env:
           BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           # Single comparison implementation (scripts/release/semver.sh),
-          # comment-stripped exactly-one extraction, annotation-safe
-          # echoes — shared with the release scripts.
+          # comment-stripped strict extraction, annotation-safe echoes —
+          # shared with the release scripts.
           if [[ ! "$BASE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
             echo "::error::unexpected base branch"
             exit 1
@@ -46,7 +47,19 @@ jobs:
             echo "Package.swift untouched; nothing to check"
             exit 0
           fi
-          scripts/release/check-pin-order.sh "$BASE_REF"
+          # Pin PRs must come from the reserved bot branch, which names
+          # the release it pins; the gate cross-checks the PR head's
+          # Package.swift against that tag (strict mode).
+          case "$HEAD_REF" in
+            pin-spm-checksum-*)
+              expected_tag="wallet-bindings-v${HEAD_REF#pin-spm-checksum-}"
+              ;;
+            *)
+              echo "::error::pin PR must originate from a pin-spm-checksum-* branch"
+              exit 1
+              ;;
+          esac
+          scripts/release/check-pin-order.sh "$BASE_REF" "$expected_tag"
 
   fmt:
     name: Format

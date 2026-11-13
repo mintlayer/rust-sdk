@@ -16,19 +16,34 @@ source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 source "${BASH_SOURCE[0]%/*}/semver.sh"
 
 BASE_BRANCH="${1:?base branch required}"
+EXPECTED_TAG="${2:-}"
 if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   || [[ "${BASE_BRANCH}" == pin-spm-checksum-* ]]; then
   echo "::error::unexpected base branch: $(esc "${BASE_BRANCH}")"
   exit 1
 fi
 
-incoming_matches="$(strip_swift_comments "$(cat Package.swift)" \
+normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
+# Strict mode when the expected tag is known (ci.yml derives it from
+# the reserved bot branch name): the normalized code must contain
+# exactly that assignment and NO other releaseTag- or checksum-bearing
+# line, so comment/nesting text tricks fail closed.
+if [ -n "${EXPECTED_TAG}" ]; then
+  expected_lines="$(printf '%s\n' "${normalized_in}" | grep -cF -x -- "let releaseTag = \"${EXPECTED_TAG}\"" || true)"
+  release_tag_lines="$(printf '%s\n' "${normalized_in}" | grep -cE 'releaseTag' || true)"
+  checksum_lines="$(printf '%s\n' "${normalized_in}" | grep -cE 'checksum:' || true)"
+  if [ "${expected_lines}" != "1" ] || [ "${release_tag_lines}" != "1" ] || [ "${checksum_lines}" != "1" ]; then
+    echo "::error::PR head does not carry exactly the expected pin assignment for ${EXPECTED_TAG} (ambiguous or missing)"
+    exit 1
+  fi
+fi
+incoming_matches="$(printf '%s\n' "${normalized_in}" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
 if [ "${incoming_matches}" != "1" ]; then
   echo "::error::expected exactly one releaseTag assignment on the PR head, found ${incoming_matches}"
   exit 1
 fi
-incoming_tag="$(strip_swift_comments "$(cat Package.swift)" \
+incoming_tag="$(printf '%s\n' "${normalized_in}" \
   | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
 incoming_version="${incoming_tag#wallet-bindings-v}"
 if [[ ! "${incoming_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then

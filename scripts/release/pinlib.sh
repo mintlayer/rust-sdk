@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for the release pin scripts (sourced, not executed).
-# Callers export LC_ALL=C for raw-byte comparisons.
+# Self-contained: pins LC_ALL=C for raw-byte comparisons.
+export LC_ALL=C
 
 esc() {
   # Strip control and non-ASCII bytes (pin tags are ASCII-only, so this

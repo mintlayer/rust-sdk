@@ -482,7 +482,7 @@ rc=$?
 if [ "${rc}" = "0" ]; then ok "guard allows forward release"; else bad "guard allows forward release" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 33b. git show fails -> open-spm-pr.sh fails closed (no silent skip).
+# 33. git show fails -> open-spm-pr.sh fails closed (no silent skip).
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf '1' > "${TMP}/show_fails"
 : > "${LOG}"
@@ -496,7 +496,7 @@ assert_no_mutations
 printf '0' > "${TMP}/show_fails"
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 33c. Comment decoys claiming THIS tag+checksum while the real code pin
+# 34. Comment decoys claiming THIS tag+checksum while the real code pin
 # differs -> comment stripping makes the script refuse (fail closed).
 printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
@@ -507,7 +507,7 @@ rc=$?
 if [ "${rc}" = "1" ]; then ok "script ignores comment decoys"; else bad "script ignores comment decoys" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 33. Comment decoys claiming THIS tag+checksum while the real code pin
+# 37. Comment decoys claiming THIS tag+checksum while the real code pin
 # differs -> comment stripping makes the guard refuse (fail closed).
 printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
@@ -518,7 +518,7 @@ rc=$?
 if [ "${rc}" = "1" ]; then ok "guard ignores comment decoys"; else bad "guard ignores comment decoys" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 34. Guard: zero releaseTag assignments -> refuse.
+# 40. Guard: zero releaseTag assignments -> refuse.
 printf 'checksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -527,7 +527,7 @@ printf 'checksum: "0000000000000000000000000000000000000000000000000000000000000
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard refuses zero assignments"; else bad "guard refuses zero assignments" "exit ${rc}"; fi
 
-# 35. Guard: two releaseTag assignments -> refuse.
+# 41. Guard: two releaseTag assignments -> refuse.
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -536,7 +536,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bind
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard refuses duplicate assignments"; else bad "guard refuses duplicate assignments" "exit ${rc}"; fi
 
-# 36. Guard: invalid checksum -> refuse.
+# 42. Guard: invalid checksum -> refuse.
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -545,7 +545,7 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard rejects invalid checksum"; else bad "guard rejects invalid checksum" "exit ${rc}"; fi
 
-# 37. Guard: git show failure -> fail closed.
+# 43. Guard: git show failure -> fail closed.
 printf '1' > "${TMP}/show_fails"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -579,6 +579,38 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "%s"\n' "${XCSUM}" 
   bash "${ORDER}" main >/dev/null 2>&1 )
 rc=$?
 if [ "${rc}" = "1" ]; then ok "pin order refuses same version"; else bad "pin order refuses same version" "exit ${rc}"; fi
+
+# 38b. Reserved-namespace base branch -> fail closed.
+# shellcheck disable=SC2016  # fixture line content is not expanded
+printf 'let releaseTag = "wallet-bindings-v0.9.0"\nchecksum: "${XCSUM}"\n' > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" "pin-spm-checksum-1.2.3" >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "pin order rejects reserved namespace"; else bad "pin order rejects reserved namespace" "exit ${rc}"; fi
+
+# 38c. Ambiguous PR head (a second releaseTag line) -> strict mode
+# refuses: the normalized head must carry exactly the expected
+# assignment and no other releaseTag- or checksum-bearing line.
+# shellcheck disable=SC2016  # fixture line content is not expanded
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "${XCSUM}"\nlet releaseTag = "wallet-bindings-v1.2.3"\n' > "${STUBS}/repo/Package.swift"
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "wallet-bindings-v1.3.0" >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "pin order refuses ambiguous PR head"; else bad "pin order refuses ambiguous PR head" "exit ${rc}"; fi
+
+# 38d. git show failure on the base -> fail closed.
+printf '1' > "${TMP}/show_fails"
+# shellcheck disable=SC2016  # fixture line content is not expanded
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "${XCSUM}"\n' > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "pin order fails closed on git show error"; else bad "pin order fails closed on git show error" "exit ${rc}"; fi
+printf '0' > "${TMP}/show_fails"
 printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
 
 # 39. semver.sh unit checks (sourced directly).

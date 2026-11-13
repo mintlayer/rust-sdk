@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared semver precedence comparator. Sourced by open-spm-pr.sh and
 # check-pin-order.sh so every pin-order verdict uses one implementation.
-# Requires LC_ALL=C for the raw-byte identifier comparisons.
+# Self-contained: pins LC_ALL=C for the raw-byte identifier comparisons.
+export LC_ALL=C
 
 # semver_prerelease_cmp <a> <b>: identifier-wise compare of the
 # pre-release parts (without the leading '-'). A final release outranks

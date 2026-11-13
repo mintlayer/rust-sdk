@@ -2,8 +2,9 @@
 # LC_ALL=C pins collation for the semver string comparisons below.
 export LC_ALL=C
 
-# Shared helpers, and the semver precedence comparator (single sources
-# of truth, also used by check-pin-order.sh and guard-release-refresh.sh).
+# Shared helpers (also used by check-pin-order.sh and
+# guard-release-refresh.sh) and the semver precedence comparator (used
+# by check-pin-order.sh).
 # shellcheck disable=SC1091  # sourced next to this file, linted directly
 source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 # shellcheck disable=SC1091  # sourced next to this file, linted directly

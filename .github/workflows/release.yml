@@ -206,18 +206,22 @@ jobs:
           # Package.swift must fail the release rather than skip the pin.
           # Fixed strings, not EREs: build-metadata tags contain '+',
           # which an interpolated pattern would treat as a quantifier.
-          # Comments, leading whitespace, and trailing whitespace are
-          # stripped so the whole-line counts match the committed shape
-          # (the checksum assignment is indented 12 spaces).
-          pin_tag_lines="$(sed 's#//.*$##' Package.swift | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -cF -x -- "let releaseTag = \"$TAG\"" || true)"
-          pin_sum_lines="$(sed 's#//.*$##' Package.swift | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -cF -x -- "checksum: \"$xcsum\"" || true)"
+          # The shared normalizer (pinlib.sh) strips block/line comments
+          # and indentation, so the whole-line counts match the code view
+          # every other verification path uses.
+          # shellcheck disable=SC1091  # sourced next to this file
+          source scripts/release/pinlib.sh
+          normalized="$(strip_swift_comments "$(cat Package.swift)")"
+          pin_tag_lines="$(printf '%s\n' "$normalized" | grep -cF -x -- "let releaseTag = \"$TAG\"" || true)"
+          pin_sum_lines="$(printf '%s\n' "$normalized" | grep -cF -x -- "checksum: \"$xcsum\"" || true)"
+          checksum_lines="$(printf '%s\n' "$normalized" | grep -cE '^checksum: "' || true)"
           if [ "$pin_tag_lines" != "1" ] || [ "$pin_sum_lines" != "1" ]; then
             echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
             exit 1
           fi
-          # A second checksum line would silently receive the same pin;
-          # refuse if the file ever gains additional binary targets.
-          if [ "$(grep -c 'checksum:' Package.swift)" != "1" ]; then
+          # A second checksum assignment would silently receive the same
+          # pin; refuse if the file ever gains additional binary targets.
+          if [ "$checksum_lines" != "1" ]; then
             echo "::error::Package.swift carries more than one checksum line; refusing to pin"
             exit 1
           fi
