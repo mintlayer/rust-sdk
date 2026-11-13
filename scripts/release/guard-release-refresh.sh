@@ -55,15 +55,17 @@ fi
 # Fixed-string whole-line comparison (TAG may contain ERE metacharacters
 # such as '+').
 pin_tag="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
-pin_sum_raw="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^checksum: ' | head -1 | grep -oE '"[^"]*"' | tr -d '"' || true)"
-pin_sum="$(printf '%s\n' "${pin_sum_raw}" | grep -oE '^[0-9a-f]{64}$' || true)"
+  | grep -E '^let releaseTag = "wallet-bindings-v' | grep -oE 'wallet-bindings-v[^"]*')"
+pin_sum="$(printf '%s\n' "${origin_code}" \
+  | grep -E '^checksum: "[0-9a-f]{64}"' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
+# A mangled releaseTag (e.g. bare 'wallet-bindings-v' with no version)
+# must fail closed: clobbering assets on a main with a broken pin would
+# desync SPM resolution exactly like a checksum mismatch would.
+if [[ ! "${pin_tag}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+  echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${pin_tag}")"
+  exit 1
+fi
 if [ "${pin_tag}" = "${TAG}" ]; then
-  if [ -z "${pin_sum}" ]; then
-    echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${pin_sum_raw}")"
-    exit 1
-  fi
   if [ "${pin_sum}" = "${XCSUM}" ]; then
     echo "rebuilt artifacts match the merged pin; asset refresh proceeds safely"
     exit 0

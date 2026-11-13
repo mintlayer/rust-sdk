@@ -31,12 +31,10 @@ XCSUM="${3:?XCSUM required}"
 DEFAULT_BRANCH="${4:?DEFAULT_BRANCH required}"
 
 BRANCH="pin-spm-checksum-${VERSION}"
-# The VERSION charset admits refname-invalid values ('..', trailing
-# '.'): validate before any git operation fails late with a raw error.
-git check-ref-format --branch "${BRANCH}"
-
 # Mirror the workflow's validation so direct/manual invocations get the
-# same fail-closed guarantees as the release run.
+# same fail-closed guarantees as the release run. This runs before
+# check-ref-format so git's raw multi-line stderr (which may contain
+# unescaped, attacker-influenced bytes) can never reach the log.
 if [[ ! "${TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::tag does not match wallet-bindings-v<semver>"
   exit 1
@@ -45,6 +43,9 @@ if [[ ! "${VERSION}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]
   echo "::error::version does not match <semver>"
   exit 1
 fi
+
+git check-ref-format --branch "${BRANCH}"
+
 if [[ ! "${XCSUM}" =~ ^[0-9a-f]{64}$ ]] || [ "${XCSUM//0/}" = "" ]; then
   echo "::error::checksum is not 64 lowercase hex characters (all-zero refused)"
   exit 1
@@ -161,17 +162,20 @@ origin_pin_sum_raw="$(printf '%s\n' "${origin_code}" \
 origin_pin_sum="$(printf '%s\n' "${origin_pin_sum_raw}" \
   | grep -oE '^[0-9a-f]{64}$' || true)"
 origin_pin_active=0
+origin_version=""
 if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
   origin_pin_active=1
 fi
-# The release marker must be parsable whenever it is present, active or
-# deactivated: both gates rely on the version for ordering decisions.
+# The release marker must be parsable whenever the assignment exists,
+# active or deactivated: both gates rely on the version for ordering.
+# An empty extraction (degenerate 'wallet-bindings-v' line) is itself
+# unparseable.
 if [ -n "${origin_pin_tag}" ]; then
   origin_version="${origin_pin_tag#v}"
-  if [[ ! "${origin_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
-    echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
-    exit 1
-  fi
+fi
+if [[ ! "${origin_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+  echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
+  exit 1
 fi
 if [ "${origin_pin_active}" = "1" ]; then
   cmp="$(semver_cmp "${VERSION}" "${origin_version}")"
@@ -183,12 +187,12 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi
-elif [ "$(printf '%s\n%s\n' "${origin_version:-0.0.0}" "${VERSION}" | sort -V | head -1)" = "${VERSION}" ] \
-  && [ -n "${origin_version}" ]; then
+elif [ "$(semver_cmp "${VERSION}" "${origin_version}")" -le 0 ]; then
   # A deactivated (zeroed-checksum) pin whose release marker is
   # newer-or-equal: main claims ${origin_version} with no active
   # checksum. Pinning ${VERSION} here would leave the marker and the
-  # checksum in conflict; manual repair required.
+  # checksum in conflict; manual repair required. semver_cmp keeps this
+  # aligned with the active-pin path at prerelease/build edges.
   echo "::error::origin/${DEFAULT_BRANCH} carries a deactivated pin for ${origin_version} (>= ${VERSION}); refusing to pin - repair the default branch manually"
   exit 1
 elif [ -n "${origin_pin_sum_raw}" ] && [ -z "${origin_pin_sum}" ]; then

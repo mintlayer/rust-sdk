@@ -697,6 +697,61 @@ else
   bad "supersede refuses a newer open pin PR" "exit ${rc}: $(cat "${OUT}")"
 fi
 
+# 48b-2. Guard over a deactivated newer-or-equal marker: refresh allowed (rewind refusal enforced upstream by open-spm-pr.sh).
+set_fixtures 0 1 'let releaseTag = "wallet-bindings-v9.9.9"
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"' pr.none
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "0" ]; then ok "guard allows refresh over deactivated newer marker (enforced upstream)"; else bad "guard allows refresh over deactivated newer marker" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
+
+# 48b-2b. Guard over a deactivated equal-version marker: refresh allowed (enforced upstream).
+set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3"
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"' pr.none
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "0" ]; then ok "guard allows refresh over deactivated equal marker (enforced upstream)"; else bad "guard allows refresh over deactivated equal marker" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
+
+# 48b-2c. Guard: deactivated OLDER pin -> allow (forward release).
+set_fixtures 0 1 'let releaseTag = "wallet-bindings-v0.1.0"
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"' pr.none
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "0" ]; then ok "guard allows deactivated older pin"; else bad "guard allows deactivated older pin" "exit ${rc}"; fi
+
+# 48b-2d. Supersede: meta-suffix stale marker (>= precedence) -> refuse.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_newer
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "close or merge it before releasing" <<< "$(cat "${OUT}")"; then
+  ok "supersede refuses meta-suffix stale pin"
+else
+  bad "supersede refuses meta-suffix stale pin" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
+
 # 48. semver.sh unit checks (sourced directly).
 # shellcheck source=/dev/null
 semver_tests="${SCRIPT_DIR}/semver.sh"
@@ -722,10 +777,11 @@ TAG_REGEX='^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-
 wf="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/release.yml" || true)"
 sc="$(grep -cF -- "${TAG_REGEX}" "${UNDER_TEST}" || true)"
 gd="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/guard-release-refresh.sh" || true)"
-if [ "${wf}" = "3" ] && [ "${sc}" = "1" ] && [ "${gd}" = "1" ]; then
-  ok "tag regex identical across all five copies"
+cy="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/ci.yml" || true)"
+if [ "${wf}" = "3" ] && [ "${sc}" = "1" ] && [ "${gd}" = "2" ] && [ "${cy}" = "1" ]; then
+  ok "tag regex identical across all seven copies"
 else
-  bad "tag regex identical across all five copies" "release.yml=${wf}, script=${sc}, guard=${gd}"
+  bad "tag regex identical across all seven copies" "release.yml=${wf}, script=${sc}, guard=${gd}, ci=${cy}"
 fi
 
 echo "passed: ${pass}, failed: ${fail}"

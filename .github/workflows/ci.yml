@@ -21,7 +21,12 @@ jobs:
   # touching Package.swift; branch protection can require it.
   pin-order:
     name: Pin ordering
-    if: github.event_name == 'pull_request'
+    # Covers human-opened pin PRs (pull_request) and manual/re-run pushes
+    # to the reserved namespace (push). Bot pin PRs opened with
+    # GITHUB_TOKEN do not emit either event; they are enforced at
+    # creation time by the release workflow's rewind guard, which also
+    # supersedes older open pin PRs.
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/pin-spm-checksum-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -33,8 +38,8 @@ jobs:
           persist-credentials: false
       - name: Refuse a downgrading pin
         env:
-          BASE_REF: ${{ github.base_ref }}
-          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.repository.default_branch }}
+          HEAD_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         run: |
           # Single comparison implementation (scripts/release/semver.sh),
           # comment-stripped strict extraction, annotation-safe echoes —

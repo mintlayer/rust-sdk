@@ -174,8 +174,13 @@ release, and then opens a pull request that pins the SPM checksum in the
 root `Package.swift` to the released artifact. The release exists before
 the pin PR is opened; a maintainer merges that pin PR to activate SPM
 resolution for the release. The `ci.yml` "Pin ordering" gate refuses any
-`Package.swift` change that is not a strictly-newer pin, so other edits
-to that file require release-team coordination. Consumers never need a
+`Package.swift` change that is not a strictly-newer pin from the
+reserved `pin-spm-checksum-*` namespace, so other edits to that file
+require release-team coordination. Recommended hardening: protect the
+`pin-spm-checksum-*` branch namespace (restrict who may push it) so the
+bot pin PR's head cannot be rewritten after the release workflow opens
+it — bot pin PRs emit no pull_request CI events, so that protection is
+the merge-time control for them. Consumers never need a
 Rust toolchain.
 The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded
