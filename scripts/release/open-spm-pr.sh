@@ -116,11 +116,8 @@ git add Package.swift
 # Anchored, exactly-once verification with fixed strings (TAG may
 # contain ERE metacharacters such as '+'): strip comments and trailing
 # whitespace, then count whole-line matches.
-expected_tag_line="let releaseTag = \"${TAG}\""
-expected_sum_line="checksum: \"${XCSUM}\""
-pin_tag_lines="$(strip_swift_comments "$(cat Package.swift)" | grep -cF -x -- "${expected_tag_line}" || true)"
-pin_sum_lines="$(strip_swift_comments "$(cat Package.swift)" | grep -cF -x -- "${expected_sum_line}" || true)"
-if [ "${pin_tag_lines}" != "1" ] || [ "${pin_sum_lines}" != "1" ]; then
+read -r pin_tag_lines pin_sum_lines checksum_lines <<< "$(count_pin_lines Package.swift "${TAG}" "${XCSUM}")"
+if [ "${pin_tag_lines}" != "1" ] || [ "${pin_sum_lines}" != "1" ] || [ "${checksum_lines}" != "1" ]; then
   echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
   exit 1
 fi
@@ -219,4 +216,12 @@ Checksum: \`${XCSUM}\`
 
 The GitHub release for this tag is published before this PR is opened.
 Merge to activate."
+  # Supersede older still-open pin PRs: at most one open pin PR may
+  # exist, so no merge order can rewind the pin to an older release.
+  for old_pr in $(gh pr list --state open --limit 100 \
+      --json number,headRefName \
+      --jq '.[] | select(.headRefName | startswith("pin-spm-checksum-") and . != "'"${BRANCH}"'") | .number'); do
+    gh pr close "${old_pr}" \
+      --comment "Superseded for ${TAG}: an older pin must not merge after a newer one." || true
+  done
 fi

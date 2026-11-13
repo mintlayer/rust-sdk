@@ -164,7 +164,7 @@ jobs:
             # from the repo at the tag and is not %-escaped here.
             echo "::error::tag version does not match bindings/Cargo.toml version"
             echo "tag version: ${VERSION}"
-            echo "crate version: ${declared}"
+            echo "crate version: ${declared}" | sed 's/::/[::]/g'
             exit 1
           fi
 
@@ -211,10 +211,7 @@ jobs:
           # every other verification path uses.
           # shellcheck disable=SC1091  # sourced next to this file
           source scripts/release/pinlib.sh
-          normalized="$(strip_swift_comments "$(cat Package.swift)")"
-          pin_tag_lines="$(printf '%s\n' "$normalized" | grep -cF -x -- "let releaseTag = \"$TAG\"" || true)"
-          pin_sum_lines="$(printf '%s\n' "$normalized" | grep -cF -x -- "checksum: \"$xcsum\"" || true)"
-          checksum_lines="$(printf '%s\n' "$normalized" | grep -cE '^checksum: "' || true)"
+          read -r pin_tag_lines pin_sum_lines checksum_lines <<< "$(count_pin_lines Package.swift "$TAG" "$xcsum")"
           if [ "$pin_tag_lines" != "1" ] || [ "$pin_sum_lines" != "1" ]; then
             echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
             exit 1

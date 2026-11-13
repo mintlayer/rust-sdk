@@ -22,6 +22,10 @@ if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
   echo "::error::unexpected base branch: $(esc "${BASE_BRANCH}")"
   exit 1
 fi
+if [ -n "${EXPECTED_TAG}" ] && [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+  echo "::error::unexpected expected tag: $(esc "${EXPECTED_TAG}")"
+  exit 1
+fi
 
 normalized_in="$(strip_swift_comments "$(cat Package.swift)")"
 # Strict mode when the expected tag is known (ci.yml derives it from
@@ -33,7 +37,7 @@ if [ -n "${EXPECTED_TAG}" ]; then
   release_tag_lines="$(printf '%s\n' "${normalized_in}" | grep -cE 'releaseTag' || true)"
   checksum_lines="$(printf '%s\n' "${normalized_in}" | grep -cE 'checksum:' || true)"
   if [ "${expected_lines}" != "1" ] || [ "${release_tag_lines}" != "1" ] || [ "${checksum_lines}" != "1" ]; then
-    echo "::error::PR head does not carry exactly the expected pin assignment for ${EXPECTED_TAG} (ambiguous or missing)"
+    echo "::error::PR head does not carry exactly the expected pin assignment for $(esc "${EXPECTED_TAG}") (ambiguous or missing)"
     exit 1
   fi
 fi

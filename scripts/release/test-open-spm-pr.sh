@@ -198,7 +198,7 @@ set_fixtures 0 1 "${PARTIAL_DRIFT}" pr.none
 run_case "partial drift (checksum new, tag old) fails" 1
 assert_no_mutations
 
-# 5b. Mirror drift: new tag but STALE checksum -> fail closed (the sed
+# 6. Mirror drift: new tag but STALE checksum -> fail closed (the sed
 # for the checksum no-op'd; SPM consumers would resolve a stale artifact).
 OLD_XCSUM="1111111111111111111111111111111111111111111111111111111111111111"
 STALE_CKSUM='let releaseTag = "wallet-bindings-v1.2.3"
@@ -213,7 +213,7 @@ set_fixtures 0 1 "${FULLY_PINNED}" pr.none 0
 run_case "already-merged pin exits 0" 0
 assert_no_mutations
 
-# 6. Open same-repo PR against main -> detected, no duplicate create.
+# 7. Open same-repo PR against main -> detected, no duplicate create.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
 run_case "own open PR detected" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
@@ -222,7 +222,7 @@ else
   ok "no duplicate create"
 fi
 
-# 7. Open different-owner PR with colliding head branch -> create proceeds.
+# 8. Open different-owner PR with colliding head branch -> create proceeds.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.evillow
 run_case "different-owner PR ignored, create proceeds" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
@@ -231,7 +231,7 @@ else
   bad "create despite different-owner PR" "${LOG_CONTENTS}"
 fi
 
-# 8. Open fork PR with colliding head branch -> create proceeds.
+# 9. Open fork PR with colliding head branch -> create proceeds.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.fork
 run_case "fork PR ignored, create proceeds" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
@@ -240,7 +240,7 @@ else
   bad "create despite fork PR" "${LOG_CONTENTS}"
 fi
 
-# 9. Open same-owner PR against a non-default base -> create proceeds.
+# 10. Open same-owner PR against a non-default base -> create proceeds.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.wrongbase
 run_case "wrong-base PR ignored, create proceeds" 0
 if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
@@ -249,40 +249,40 @@ else
   bad "create despite wrong-base PR" "${LOG_CONTENTS}"
 fi
 
-# 10. Malformed repository owner -> fail closed.
+# 11. Malformed repository owner -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 run_case "invalid owner fails" 1 "bad..owner/rust-sdk"
 assert_no_mutations
 
-# 11. Malformed DEFAULT_BRANCH -> fail closed before any fetch.
+# 12. Malformed DEFAULT_BRANCH -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid default branch fails" 1 "mintlayer/rust-sdk" $'ma\tin'
 assert_no_mutations
 
-# 12. Malformed XCSUM -> fail closed before any fetch.
+# 13. Malformed XCSUM -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid checksum fails" 1 "mintlayer/rust-sdk" main "xyz"
 assert_no_mutations
 
-# 13. HEAD is not the tagged commit -> fail closed, no push.
+# 14. HEAD is not the tagged commit -> fail closed, no push.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'othercommitsha' > "${TMP}/head_commit"
 run_case "HEAD differs from tag fails" 1
 assert_no_mutations
 printf 'tagcommitsha' > "${TMP}/head_commit"
 
-# 14. All-zero checksum -> fail closed before any fetch.
+# 15. All-zero checksum -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "all-zero checksum fails" 1 "mintlayer/rust-sdk" main \
   "0000000000000000000000000000000000000000000000000000000000000000"
 assert_no_mutations
 
-# 15. VERSION that is not semver -> fail closed before any fetch.
+# 16. VERSION that is not semver -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid version fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2
 assert_no_mutations
 
-# 16. TAG not matching the release pattern -> fail closed before fetch.
+# 17. TAG not matching the release pattern -> fail closed before fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid tag (no patch) fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2 "wallet-bindings-v1.2"
 assert_no_mutations
@@ -290,12 +290,12 @@ set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "invalid tag (wrong prefix) fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 1.2.3 "evil-wallet-bindings-v1.2.3"
 assert_no_mutations
 
-# 17. Default branch inside the reserved namespace -> fail closed.
+# 18. Default branch inside the reserved namespace -> fail closed.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "reserved-namespace default branch fails" 1 "mintlayer/rust-sdk" "pin-spm-checksum-1.2.3"
 assert_no_mutations
 
-# 18. Shallow clone -> the unshallow fetch is used.
+# 19. Shallow clone -> the unshallow fetch is used.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'true' > "${TMP}/is_shallow"
 run_case "shallow clone unshallows" 0
@@ -306,7 +306,7 @@ else
 fi
 printf 'false' > "${TMP}/is_shallow"
 
-# 19. Complete clone -> plain fetch with the explicit full refspec.
+# 20. Complete clone -> plain fetch with the explicit full refspec.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 run_case "complete clone plain fetch" 0
 if grep -q -- "fetch origin +refs/heads/main:refs/remotes/origin/main" <<< "${LOG_CONTENTS}"; then
@@ -315,13 +315,13 @@ else
   bad "plain fetch carries the full refspec" "${LOG_CONTENTS}"
 fi
 
-# 20. Default branch already pins a DIFFERENT release -> fail closed.
+# 21. Default branch already pins a DIFFERENT release -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 run_case "stale tag against a newer pin fails" 1
 assert_no_mutations
 
-# 21. Forward release over an OLDER active pin -> allowed.
+# 22. Forward release over an OLDER active pin -> allowed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v0.1.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
 run_case "forward release over older pin proceeds" 0
@@ -332,47 +332,47 @@ else
 fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 22. Same-version active pin with differing content -> rewind guard.
+# 23. Same-version active pin with differing content -> rewind guard.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
 run_case "same-version conflicting pin fails" 1
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 23. merge-base git error (rc > 1) -> fail closed, distinct from rc 1.
+# 24. merge-base git error (rc > 1) -> fail closed, distinct from rc 1.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf '128' > "${TMP}/ancestry"
 run_case "merge-base git error fails" 1
 assert_no_mutations
 printf '0' > "${TMP}/ancestry"
 
-# 24. Unparseable origin pin tag -> fail closed.
+# 25. Unparseable origin pin tag -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-vx"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 run_case "unparseable origin pin tag fails" 1
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 25. Active checksum with missing tag line -> fail closed (one-sided).
+# 26. Active checksum with missing tag line -> fail closed (one-sided).
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'checksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 run_case "one-sided active checksum fails" 1
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 26. TAG/VERSION mismatch -> fail closed before any fetch.
+# 27. TAG/VERSION mismatch -> fail closed before any fetch.
 set_fixtures 0 1 "${NOT_PINNED}" pr.none
 run_case "mismatched tag and version fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 9.9.9
 assert_no_mutations
 
-# 27. Mangled checksum line (valid tag, non-hex checksum) -> fail closed.
+# 28. Mangled checksum line (valid tag, non-hex checksum) -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "deadbeef"\n' > "${TMP}/origin_swift"
 run_case "mangled origin checksum fails" 1
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 28. Prerelease over final (1.2.3-rc.1 after 1.2.3) -> rewind, refused.
+# 29. Prerelease over final (1.2.3-rc.1 after 1.2.3) -> rewind, refused.
 set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3-rc.1" // ...
 checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
@@ -386,7 +386,7 @@ if [ "${rc}" = "1" ]; then ok "prerelease after final refused"; else bad "prerel
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 29. Final over prerelease (1.2.3 after 1.2.3-rc1) -> allowed forward.
+# 30. Final over prerelease (1.2.3 after 1.2.3-rc1) -> allowed forward.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3-rc1"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 : > "${LOG}"
@@ -402,8 +402,8 @@ else
 fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 29b. Build metadata is excluded from precedence: an origin pin of
-# 1.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
+# 31. Build metadata is excluded from precedence: an origin pin of
+# 32.2.3+meta.b vs incoming 1.2.3+meta.a compares EQUAL -> refuse.
 set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3+meta.a" // ...
 checksum: "'"${XCSUM}"'"' pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3+meta.b"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
@@ -432,7 +432,18 @@ LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "metadata-suffix equal precedence refused"; else bad "metadata-suffix equal precedence refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
-# 29d. Huge numeric prerelease identifiers compare by (digit length,
+# 33. Guard: mangled checksum (65+ hex) on origin -> fail closed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b9700"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ]; then ok "guard refuses 65-hex checksum"; else bad "guard refuses 65-hex checksum" "exit ${rc}"; fi
+assert_no_mutations
+
+# 34. Huge numeric prerelease identifiers compare by (digit length,
 # bytes) — no arithmetic — so an origin pin of rc<20 digits> still
 # outranks incoming rc.2 -> refused, no arithmetic wrap.
 set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3-2" // ...
@@ -449,7 +460,7 @@ if [ "${rc}" = "1" ]; then ok "huge numeric prerelease refused without wrap"; el
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 30. Guard script: same tag + differing checksum -> refuse.
+# 35. Guard script: same tag + differing checksum -> refuse.
 GUARD="${SCRIPT_DIR}/guard-release-refresh.sh"
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
@@ -459,7 +470,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard refuses mismatched rebuild"; else bad "guard refuses mismatched rebuild" "exit ${rc}"; fi
 
-# 31. Guard script: same tag + identical checksum (with a header
+# 36. Guard script: same tag + identical checksum (with a header
 # comment whose version literal differs) -> allow.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 # shellcheck disable=SC2016  # \n are printf escapes, no expansion
@@ -472,7 +483,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "%s"\n' "${XCSUM}" 
 rc=$?
 if [ "${rc}" = "0" ]; then ok "guard allows identical rebuild"; else bad "guard allows identical rebuild" "exit ${rc}"; fi
 
-# 32. Guard script: older pin on main (forward release) -> allow.
+# 37. Guard script: older pin on main (forward release) -> allow.
 printf 'let releaseTag = "wallet-bindings-v0.1.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -482,7 +493,7 @@ rc=$?
 if [ "${rc}" = "0" ]; then ok "guard allows forward release"; else bad "guard allows forward release" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 33. git show fails -> open-spm-pr.sh fails closed (no silent skip).
+# 38. git show fails -> open-spm-pr.sh fails closed (no silent skip).
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf '1' > "${TMP}/show_fails"
 : > "${LOG}"
@@ -496,7 +507,7 @@ assert_no_mutations
 printf '0' > "${TMP}/show_fails"
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 34. Comment decoys claiming THIS tag+checksum while the real code pin
+# 39. Comment decoys claiming THIS tag+checksum while the real code pin
 # differs -> comment stripping makes the script refuse (fail closed).
 printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
@@ -507,7 +518,7 @@ rc=$?
 if [ "${rc}" = "1" ]; then ok "script ignores comment decoys"; else bad "script ignores comment decoys" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 37. Comment decoys claiming THIS tag+checksum while the real code pin
+# 40. Comment decoys claiming THIS tag+checksum while the real code pin
 # differs -> comment stripping makes the guard refuse (fail closed).
 printf '// checksum: "1111111111111111111111111111111111111111111111111111111111111111"\n// let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
@@ -518,7 +529,7 @@ rc=$?
 if [ "${rc}" = "1" ]; then ok "guard ignores comment decoys"; else bad "guard ignores comment decoys" "exit ${rc}"; fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 40. Guard: zero releaseTag assignments -> refuse.
+# 41. Guard: zero releaseTag assignments -> refuse.
 printf 'checksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -527,7 +538,7 @@ printf 'checksum: "0000000000000000000000000000000000000000000000000000000000000
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard refuses zero assignments"; else bad "guard refuses zero assignments" "exit ${rc}"; fi
 
-# 41. Guard: two releaseTag assignments -> refuse.
+# 42. Guard: two releaseTag assignments -> refuse.
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -536,7 +547,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bind
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard refuses duplicate assignments"; else bad "guard refuses duplicate assignments" "exit ${rc}"; fi
 
-# 42. Guard: invalid checksum -> refuse.
+# 43. Guard: invalid checksum -> refuse.
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -545,7 +556,7 @@ printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "000
 rc=$?
 if [ "${rc}" = "1" ]; then ok "guard rejects invalid checksum"; else bad "guard rejects invalid checksum" "exit ${rc}"; fi
 
-# 43. Guard: git show failure -> fail closed.
+# 44. Guard: git show failure -> fail closed.
 printf '1' > "${TMP}/show_fails"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -556,7 +567,7 @@ if [ "${rc}" = "1" ]; then ok "guard fails closed on git show failure"; else bad
 printf '0' > "${TMP}/show_fails"
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
-# 38. Pin-order script: upgrade allows, downgrade refuses, same refuses.
+# 45. Pin-order script: upgrade allows, downgrade refuses, same refuses.
 ORDER="${SCRIPT_DIR}/check-pin-order.sh"
 printf 'let releaseTag = "wallet-bindings-v1.2.3+meta"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
@@ -580,7 +591,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "%s"\n' "${XCSUM}" 
 rc=$?
 if [ "${rc}" = "1" ]; then ok "pin order refuses same version"; else bad "pin order refuses same version" "exit ${rc}"; fi
 
-# 38b. Reserved-namespace base branch -> fail closed.
+# 46. Reserved-namespace base branch -> fail closed.
 # shellcheck disable=SC2016  # fixture line content is not expanded
 printf 'let releaseTag = "wallet-bindings-v0.9.0"\nchecksum: "${XCSUM}"\n' > "${STUBS}/repo/Package.swift"
 ( cd "${STUBS}/repo" && \
@@ -601,7 +612,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e
 rc=$?
 if [ "${rc}" = "1" ]; then ok "pin order refuses ambiguous PR head"; else bad "pin order refuses ambiguous PR head" "exit ${rc}"; fi
 
-# 38d. git show failure on the base -> fail closed.
+# 47. git show failure on the base -> fail closed.
 printf '1' > "${TMP}/show_fails"
 # shellcheck disable=SC2016  # fixture line content is not expanded
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "${XCSUM}"\n' > "${STUBS}/repo/Package.swift"
@@ -613,7 +624,7 @@ if [ "${rc}" = "1" ]; then ok "pin order fails closed on git show error"; else b
 printf '0' > "${TMP}/show_fails"
 printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
 
-# 39. semver.sh unit checks (sourced directly).
+# 48. semver.sh unit checks (sourced directly).
 # shellcheck source=/dev/null
 semver_tests="${SCRIPT_DIR}/semver.sh"
 semver_cmp_check() {

@@ -59,6 +59,17 @@ jobs:
               exit 1
               ;;
           esac
+          # Branch names may contain '%': reject anything outside the
+          # tag charset before it reaches annotations or comparisons.
+          # NOTE: this pull_request gate covers human-opened pin PRs; a
+          # bot pin PR (opened with GITHUB_TOKEN) does not emit
+          # pull_request events, so it is enforced at creation time by
+          # the release workflow's rewind guard, which also supersedes
+          # older open pin PRs (no merge-order rewind).
+          if [[ ! "$expected_tag" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::derived tag does not match wallet-bindings-v<semver>"
+            exit 1
+          fi
           scripts/release/check-pin-order.sh "$BASE_REF" "$expected_tag"
 
   fmt:

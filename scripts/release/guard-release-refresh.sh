@@ -56,9 +56,14 @@ fi
 # such as '+').
 pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
-pin_sum="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^checksum: ' | grep -oE '[0-9a-f]{64}')"
+pin_sum_raw="$(printf '%s\n' "${origin_code}" \
+  | grep -E '^checksum: ' | head -1 | grep -oE '"[^"]*"' | tr -d '"' || true)"
+pin_sum="$(printf '%s\n' "${pin_sum_raw}" | grep -oE '^[0-9a-f]{64}$' || true)"
 if [ "${pin_tag}" = "${TAG}" ]; then
+  if [ -z "${pin_sum}" ]; then
+    echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${pin_sum_raw}")"
+    exit 1
+  fi
   if [ "${pin_sum}" = "${XCSUM}" ]; then
     echo "release ${TAG} is already pinned on ${DEFAULT_BRANCH}; asset refresh is a no-op"
     exit 0
