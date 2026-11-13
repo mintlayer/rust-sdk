@@ -154,11 +154,14 @@ asserts identical outputs; signature blobs use random nonces, so those
 cases are cross-verified instead. CI runs both suites on every pull
 request.
 
-## Versioning
+## Releasing
 
-Binding releases will be tagged `wallet-bindings-vX.Y.Z` and will ship
-prebuilt artifacts (Android AAR, iOS XCFramework) with SHA-256 checksums
-attached to the GitHub release, so consumers never need a Rust toolchain.
+Binding releases are tagged `wallet-bindings-vX.Y.Z` (matching the
+`version` in `bindings/Cargo.toml`). Pushing such a tag triggers the
+release workflow, which builds the AAR and the XCFramework from the
+tagged commit, attaches them with a `SHA256SUMS` manifest to the GitHub
+release, and pins the SPM checksum in the root `Package.swift` to the
+released artifact. Consumers never need a Rust toolchain.
 The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded
 in the repository `CHANGELOG.md`.
