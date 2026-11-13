@@ -25,7 +25,19 @@ command -v jq >/dev/null 2>&1 || { echo "jq is required by this test harness"; e
 pass=0
 fail=0
 ok() { pass=$((pass + 1)); echo "ok - $1"; }
-bad() { fail=$((fail + 1)); echo "NOT OK - $1: $2"; }
+# Sanitize log output: the script under test and stub args are
+# PR-controlled on pull_request runs, so neutralize workflow-command
+# forgery and control characters before echoing.
+sanitize() {
+  local s="$1"
+  s="${s//$'\r'/}"
+  s="${s//$'\n'/ | }"
+  s="${s//^::/[::}"
+  s="${s//::error::/[error] }"
+  s="${s//::warning::/[warning] }"
+  printf '%s' "$s"
+}
+bad() { fail=$((fail + 1)); echo "NOT OK - $1: $(sanitize "$2")"; }
 
 # --- stub git/gh -------------------------------------------------------
 # Each stub logs its arguments and returns scripted behavior controlled
@@ -311,6 +323,31 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0
 run_case "same-version conflicting pin fails" 1
 assert_no_mutations
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 23. merge-base git error (rc > 1) -> fail closed, distinct from rc 1.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf '128' > "${TMP}/ancestry"
+run_case "merge-base git error fails" 1
+assert_no_mutations
+printf '0' > "${TMP}/ancestry"
+
+# 24. Unparseable origin pin tag -> fail closed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-vx"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+run_case "unparseable origin pin tag fails" 1
+assert_no_mutations
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 25. Active checksum with missing tag line -> fail closed (one-sided).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'checksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
+run_case "one-sided active checksum fails" 1
+assert_no_mutations
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 26. TAG/VERSION mismatch -> fail closed before any fetch.
+set_fixtures 0 1 "${NOT_PINNED}" pr.none
+run_case "mismatched tag and version fails" 1 "mintlayer/rust-sdk" main "${XCSUM}" 9.9.9
 
 # Static check: the TAG regex must be byte-identical in every copy
 # (three occurrences in release.yml, one in the script under test).

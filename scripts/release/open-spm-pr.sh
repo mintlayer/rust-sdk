@@ -61,12 +61,19 @@ if [[ ! "${owner}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
   exit 1
 fi
 
+# The remaining git/grep logic assumes the repository root; enforce it
+# before touching the checkout's git config.
+if [ ! -d .git ] || [ ! -f Package.swift ]; then
+  echo "::error::run this script from the repository root"
+  exit 1
+fi
+
 git config user.name "mintlayer-release-bot"
 git config user.email "hello@mintlayer.org"
 
-# The remaining git/grep logic assumes the repository root.
-if [ ! -d .git ] || [ ! -f Package.swift ]; then
-  echo "::error::run this script from the repository root"
+# TAG and VERSION must describe the same release.
+if [ "${TAG}" != "wallet-bindings-v${VERSION}" ]; then
+  echo "::error::TAG (${TAG}) and VERSION (${VERSION}) do not describe the same release"
   exit 1
 fi
 
@@ -129,10 +136,17 @@ origin_pin_tag="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
   | grep -oE 'v[0-9][^"]*' || true)"
 origin_pin_sum="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
   | grep -oE 'checksum: "[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' || true)"
-if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ] \
-  && [ -n "${origin_pin_tag}" ]; then
+origin_pin_sum_raw="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
+  | grep -oE 'checksum: "[^"]*"' | grep -oE '"[^"]*"' | tr -d '"' | head -1 || true)"
+origin_pin_active=0
+if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+  origin_pin_active=1
+fi
+if [ "${origin_pin_active}" = "1" ]; then
+  # An active (non-placeholder) pin requires a parsable tag line; a
+  # missing/mangled tag line is itself a fail-closed state.
   origin_version="${origin_pin_tag#v}"
-  if [[ ! "${origin_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+  if [ -z "${origin_pin_tag}" ] || [[ ! "${origin_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
     echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
     exit 1
   fi
@@ -142,6 +156,14 @@ if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "000000000000000000000
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi
+elif [ -n "${origin_pin_sum_raw}" ] && [ -z "${origin_pin_sum}" ]; then
+  # A checksum line exists but is not 64 lowercase hex: mangled pin.
+  echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${origin_pin_sum_raw}")"
+  exit 1
+elif [ -z "${origin_pin_sum_raw}" ] && [ -n "${origin_pin_tag}" ]; then
+  # A tag line without any checksum line: mangled pin.
+  echo "::error::origin/${DEFAULT_BRANCH} carries a releaseTag without a checksum line: $(esc "${origin_pin_tag}")"
+  exit 1
 fi
 git commit -m "chore: pin the SPM checksum to ${TAG}"
 

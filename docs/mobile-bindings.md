@@ -22,7 +22,7 @@ against captured reference outputs of `@mintlayer/wasm-lib` 1.4.0 (see
 
 | Platform | Artifact | Architectures |
 |---|---|---|
-| Android 6.0+ (API 24) | `mintlayer-wallet-bindings-<ver>.aar` | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
+| Android 7.0+ (API 24) | `mintlayer-wallet-bindings-<ver>.aar` | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
 | iOS 15+ | `MintlayerWalletBindings.xcframework` | `ios-arm64` (device), `ios-arm64_x86_64-simulator` |
 
 The Intel simulator slice (`x86_64-apple-ios-sim`) is omitted: recent

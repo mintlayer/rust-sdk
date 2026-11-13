@@ -23,7 +23,7 @@ jobs:
           # token off disk like the release build jobs do.
           persist-credentials: false
       - name: shellcheck repo scripts
-        run: shellcheck $(git ls-files 'scripts/*.sh')
+        run: git ls-files -z 'scripts/*.sh' | xargs -0 shellcheck
       - name: actionlint
         env:
           # SHA-256 of actionlint_1.7.7_linux_amd64.tar.gz, cross-checked

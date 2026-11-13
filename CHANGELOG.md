@@ -33,7 +33,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   artifact (a maintainer merges the pin PR to activate SPM resolution).
   The generated Kotlin
   package is `org.mintlayer.wallet.bindings`; the Swift module is
-  `MintlayerWalletBindings`.
+  `MintlayerWalletBindings`. The workflow publishes the release before
+  opening a checksum-pin PR for `Package.swift` (a maintainer merges it
+  to activate SPM resolution), and a `lint.yml` gate runs actionlint and
+  shellcheck (plus unit tests for `scripts/release/`) on workflow and
+  script changes.
 - indexer: cursor (keyset) pagination for api-server v2
   (mintlayer-core PR #2130): `Page<T>`, the reusable `Pager` walker
   (`*_pager` constructors for pools, the global transaction listing, both

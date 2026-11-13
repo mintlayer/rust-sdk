@@ -12,10 +12,11 @@ on:
     tags:
       - "wallet-bindings-v*"
 
-# Tag re-pushes and manual re-runs must not interleave: they would race
-# the force-pushes to the pin branch and the release-existence check.
+# Releases are fully serialized: two tags cut near-simultaneously would
+# race the pin PRs (the rewind guard runs at PR-creation time, so merge
+# order would decide which pin wins). One group queues every release.
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 permissions:
