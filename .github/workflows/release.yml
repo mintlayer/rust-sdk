@@ -232,17 +232,24 @@ jobs:
           `docs/mobile-bindings.md` for usage from Kotlin and Swift.
           EOF
           )
+          # Idempotent for re-runs after a transient pin-PR failure: an
+          # existing release is reused and its assets refreshed in place.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::release $TAG already exists; delete it or cut a new version"
-            exit 1
+            echo "release $TAG already exists; refreshing assets"
+            gh release upload "$TAG" --clobber \
+              dist/mintlayer-wallet-bindings-*.aar \
+              dist/MintlayerWalletBindings.xcframework.zip \
+              dist/SHA256SUMS \
+              dist/swift-sources/MintlayerWalletBindings.swift
+          else
+            gh release create "$TAG" \
+              dist/mintlayer-wallet-bindings-*.aar \
+              dist/MintlayerWalletBindings.xcframework.zip \
+              dist/SHA256SUMS \
+              dist/swift-sources/MintlayerWalletBindings.swift \
+              --title "Mobile bindings $TAG" \
+              --notes "$notes"
           fi
-          gh release create "$TAG" \
-            dist/mintlayer-wallet-bindings-*.aar \
-            dist/MintlayerWalletBindings.xcframework.zip \
-            dist/SHA256SUMS \
-            dist/swift-sources/MintlayerWalletBindings.swift \
-            --title "Mobile bindings $TAG" \
-            --notes "$notes"
 
       - name: Open the SPM checksum-pin PR
         env:

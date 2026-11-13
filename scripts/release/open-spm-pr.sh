@@ -64,6 +64,12 @@ fi
 git config user.name "mintlayer-release-bot"
 git config user.email "hello@mintlayer.org"
 
+# The remaining git/grep logic assumes the repository root.
+if [ ! -d .git ] || [ ! -f Package.swift ]; then
+  echo "::error::run this script from the repository root"
+  exit 1
+fi
+
 # The tag must sit on the default branch's history; otherwise the pin PR
 # would carry unrelated commits. Fail loudly before any push. Unshallow
 # only when needed, and keep stderr visible for genuine fetch failures.
@@ -72,7 +78,13 @@ if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
 else
   git fetch origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
 fi
-if ! git merge-base --is-ancestor "refs/tags/${TAG}" "origin/${DEFAULT_BRANCH}"; then
+merge_rc=0
+git merge-base --is-ancestor "refs/tags/${TAG}" "origin/${DEFAULT_BRANCH}" || merge_rc=$?
+if [ "${merge_rc}" -gt 1 ]; then
+  echo "::error::failed to compare ${TAG} against origin/${DEFAULT_BRANCH} (git exit ${merge_rc}); check the fetch and the tag"
+  exit 1
+fi
+if [ "${merge_rc}" -eq 1 ]; then
   echo "::error::tag $(esc "${TAG}") is not an ancestor of $(esc "${DEFAULT_BRANCH}"); cut the tag from the default branch tip"
   exit 1
 fi
@@ -94,13 +106,6 @@ if ! grep -qF "${XCSUM}" Package.swift \
   echo "::error::Package.swift does not carry the expected release tag and checksum after substitution"
   exit 1
 fi
-# Empty staged diff = the tag commit itself carries the pin. The tag is
-# an ancestor of the default branch, so that pin already shipped; any
-# pin PR for it was merged previously. Nothing to open.
-if git diff --cached --quiet; then
-  echo "the tag already carries the pin; nothing to do"
-  exit 0
-fi
 # An identical Package.swift on the default branch means the pin PR was
 # already merged; short-circuit instead of attempting a create that
 # GitHub would reject with "No commits between".
@@ -108,19 +113,35 @@ if git diff --quiet "origin/${DEFAULT_BRANCH}" -- Package.swift; then
   echo "checksum pin is already merged into ${DEFAULT_BRANCH}; nothing to do"
   exit 0
 fi
-# If the default branch carries an ACTIVE pin for a different release
-# (non-placeholder checksum, different tag), creating this PR would
-# rewind that pin; only the newest release may pin. Fail closed on
-# manual invocations for stale tags.
+# Empty staged diff = the tag commit itself carries the pin. That is
+# only benign when the default branch agrees (handled above); if the
+# default branch differs, the pin on main was reverted and the release
+# is effectively unpinned. Fail closed rather than claim success.
+if git diff --cached --quiet; then
+  echo "::error::the tag commit carries the pin but origin/${DEFAULT_BRANCH} does not; the pin was reverted on the default branch and needs manual repair"
+  exit 1
+fi
+# The default branch carrying an ACTIVE pin for a NEWER-or-equal
+# release means this invocation would rewind that pin; refuse. Older
+# active pins are the normal forward-release state and proceed.
 origin_pin_tag="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
   | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' \
   | grep -oE 'v[0-9][^"]*' || true)"
 origin_pin_sum="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
   | grep -oE 'checksum: "[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' || true)"
 if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ] \
-  && [ -n "${origin_pin_tag}" ] && [ "${origin_pin_tag}" != "v${VERSION}" ]; then
-  echo "::error::origin/${DEFAULT_BRANCH} already pins ${origin_pin_tag}; this script may only pin the newest release"
-  exit 1
+  && [ -n "${origin_pin_tag}" ]; then
+  origin_version="${origin_pin_tag#v}"
+  if [[ ! "${origin_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+    echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"
+    exit 1
+  fi
+  # sort -V: the first line is the smaller version. If the incoming
+  # VERSION sorts first, the origin pin is newer-or-equal -> rewind.
+  if [ "$(printf '%s\n%s\n' "${origin_version}" "${VERSION}" | sort -V | head -1)" = "${VERSION}" ]; then
+    echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
+    exit 1
+  fi
 fi
 git commit -m "chore: pin the SPM checksum to ${TAG}"
 

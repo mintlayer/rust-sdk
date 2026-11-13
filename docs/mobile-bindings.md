@@ -25,9 +25,8 @@ against captured reference outputs of `@mintlayer/wasm-lib` 1.4.0 (see
 | Android 6.0+ (API 24) | `mintlayer-wallet-bindings-<ver>.aar` | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
 | iOS 15+ | `MintlayerWalletBindings.xcframework` | `ios-arm64` (device), `ios-arm64_x86_64-simulator` |
 
-The Intel simulator slice (`x86_64-apple-ios-sim`) is omitted: recent Xcode
-releases no longer ship Intel simulator runtimes, and Rust 1.92 does not
-publish that target's standard library.
+The Intel simulator slice (`x86_64-apple-ios-sim`) is omitted: recent
+Xcode releases no longer ship Intel simulator runtimes.
 
 ## API surface
 

@@ -16,7 +16,8 @@ STUBS="${TMP}/stubs"
 LOG="${TMP}/stub.log"
 OUT="${TMP}/out.log"
 trap 'rm -rf "${TMP}"' EXIT
-mkdir -p "${STUBS}/repo"
+mkdir -p "${STUBS}/repo/.git"
+printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
 export LOG
 
 command -v jq >/dev/null 2>&1 || { echo "jq is required by this test harness"; exit 1; }
@@ -158,14 +159,10 @@ else
   bad "create pins base and head explicitly" "${LOG_CONTENTS}"
 fi
 
-# 3. Empty diff + both substitutions present -> idempotent success.
+# 3. Empty diff + pin present but main DIFFERS -> the pin on main was
+# reverted; fail closed instead of claiming success.
 set_fixtures 0 0 "${FULLY_PINNED}" pr.none 1
-run_case "empty diff with pin exits 0" 0
-if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
-  bad "no create when pinned" "${LOG_CONTENTS}"
-else
-  ok "no create when pinned"
-fi
+run_case "empty diff with reverted main fails" 1
 assert_no_mutations
 
 # 4. Empty diff + pin absent -> fail closed.
@@ -248,6 +245,7 @@ run_case "invalid checksum fails" 1 "mintlayer/rust-sdk" main "xyz"
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'othercommitsha' > "${TMP}/head_commit"
 run_case "HEAD differs from tag fails" 1
+assert_no_mutations
 printf 'tagcommitsha' > "${TMP}/head_commit"
 
 # 14. All-zero checksum -> fail closed before any fetch.
@@ -295,8 +293,24 @@ set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"\n' > "${TMP}/origin_swift"
 run_case "stale tag against a newer pin fails" 1
 assert_no_mutations
+
+# 21. Forward release over an OLDER active pin -> allowed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v0.1.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+run_case "forward release over older pin proceeds" 0
+if grep -q "gh pr create" <<< "${LOG_CONTENTS}"; then
+  ok "create proceeds over older pin"
+else
+  bad "create proceeds over older pin" "${LOG_CONTENTS}"
+fi
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+
+# 22. Same-version active pin with differing content -> rewind guard.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+run_case "same-version conflicting pin fails" 1
 assert_no_mutations
+printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
 # Static check: the TAG regex must be byte-identical in every copy
 # (three occurrences in release.yml, one in the script under test).

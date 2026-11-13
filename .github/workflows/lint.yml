@@ -3,10 +3,10 @@ name: Lint workflows and scripts
 on:
   push:
     branches: [main]
-    paths: [".github/workflows/**", "scripts/release/**"]
+    paths: [".github/workflows/**", "scripts/**"]
   pull_request:
     branches: [main]
-    paths: [".github/workflows/**", "scripts/release/**"]
+    paths: [".github/workflows/**", "scripts/**"]
 
 permissions:
   contents: read
