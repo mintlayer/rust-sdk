@@ -21,7 +21,7 @@ let package = Package(
     name: "MintlayerWalletBindings",
     platforms: [
         // Matches the React Native 0.88 minimum deployment target.
-        .iOS(.v15_1)
+        .iOS(.v15)
     ],
     products: [
         .library(

@@ -16,7 +16,7 @@ import PackageDescription
 let package = Package(
     name: "MintlayerWalletBindingsTests",
     platforms: [
-        .iOS(.v15_1)
+        .iOS(.v15)
     ],
     products: [
         .library(
