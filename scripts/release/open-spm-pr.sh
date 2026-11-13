@@ -26,7 +26,10 @@ BRANCH="pin-spm-checksum-${VERSION}"
 
 # Workflow-command values need %-/CR-/LF-escaping to stay one annotation.
 esc() {
-  local s="$1"
+  # Strip C0 control bytes (incl. ESC) so extracted repo content cannot
+  # spoof the log with terminal escapes, then %-escape the rest.
+  local s
+  s="$(printf '%s' "$1" | tr -d '\000-\037\177')"
   s="${s//%/%25}"
   s="${s//$'\r'/%0D}"
   s="${s//$'\n'/%0A}"
@@ -114,9 +117,12 @@ git checkout -B "${BRANCH}"
 git add Package.swift
 # Both substitutions must be present, on every path: anything else means
 # the sed no-op'd or corrupted the file; fail closed.
-if ! grep -qF "${XCSUM}" Package.swift \
-  || ! grep -qF "let releaseTag = \"${TAG}\"" Package.swift; then
-  echo "::error::Package.swift does not carry the expected release tag and checksum after substitution"
+# Anchored, exactly-once verification: substring greps would also match
+# a drifted assignment plus a comment carrying the canonical literal.
+pin_tag_lines="$(grep -cE "^[[:space:]]*let releaseTag = \"${TAG}\"[[:space:]]*(//.*)?$" Package.swift || true)"
+pin_sum_lines="$(grep -cE "^[[:space:]]*checksum: \"${XCSUM}\"[[:space:]]*(//.*)?$" Package.swift || true)"
+if [ "${pin_tag_lines}" != "1" ] || [ "${pin_sum_lines}" != "1" ]; then
+  echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
   exit 1
 fi
 # An identical Package.swift on the default branch means the pin PR was
@@ -141,14 +147,14 @@ origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" 
   || { echo "::error::cannot read origin/${DEFAULT_BRANCH}:Package.swift"; exit 1; }
 # Only real code lines constitute the pin: comment lines are ignored so
 # a decoy literal in a comment cannot flip the guard's verdict.
-origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//')"
+origin_code="$(printf '%s\n' "${origin_swift}" | grep -v '^[[:space:]]*//' || true)"
 origin_pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' \
   | grep -oE 'v[0-9][^"]*' || true)"
-origin_pin_sum="$(printf '%s\n' "${origin_code}" \
-  | grep -oE 'checksum: "[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' || true)"
-origin_pin_sum_raw="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" \
+origin_pin_sum_raw="$(printf '%s\n' "${origin_code}" \
   | grep -oE 'checksum: "[^"]*"' | grep -oE '"[^"]*"' | tr -d '"' | head -1 || true)"
+origin_pin_sum="$(printf '%s\n' "${origin_pin_sum_raw}" \
+  | grep -oE '^[0-9a-f]{64}$' || true)"
 origin_pin_active=0
 if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
   origin_pin_active=1
@@ -181,12 +187,12 @@ if [ "${origin_pin_active}" = "1" ]; then
       if [ -z "${x}" ] && [ -z "${y}" ]; then continue; fi
       if [ -z "${x}" ]; then echo -1; return; fi
       if [ -z "${y}" ]; then echo 1; return; fi
-      if [[ "${x}" =~ ^[0-9]+$ ]] && [[ "${y}" =~ ^[0-9]+$ ]]; then
+      if [[ "${x}" =~ ^[0-9]{1,18}$ ]] && [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
         [ "$((10#${x}))" -lt "$((10#${y}))" ] && { echo -1; return; }
         [ "$((10#${x}))" -gt "$((10#${y}))" ] && { echo 1; return; }
-      elif [[ "${x}" =~ ^[0-9]+$ ]]; then
+      elif [[ "${x}" =~ ^[0-9]{1,18}$ ]]; then
         echo -1; return
-      elif [[ "${y}" =~ ^[0-9]+$ ]]; then
+      elif [[ "${y}" =~ ^[0-9]{1,18}$ ]]; then
         echo 1; return
       elif [[ "${x}" < "${y}" ]]; then
         echo -1; return

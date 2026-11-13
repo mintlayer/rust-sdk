@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# LC_ALL=C pins collation for the ASCII-range validations below.
+export LC_ALL=C
 # Refuse to clobber published release assets when the default branch
 # already pins THIS release and the rebuilt artifacts are not
 # bit-reproducible: publishing mismatched artifacts would desync SPM
@@ -14,7 +16,8 @@ XCSUM="${2:?XCSUM required}"
 DEFAULT_BRANCH="${3:?DEFAULT_BRANCH required}"
 
 esc() {
-  local s="$1"
+  local s
+  s="$(printf '%s' "$1" | tr -d '\000-\037\177')"
   s="${s//%/%25}"
   s="${s//$'\r'/%0D}"
   s="${s//$'\n'/%0A}"

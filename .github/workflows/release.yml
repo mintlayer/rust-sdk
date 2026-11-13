@@ -137,6 +137,7 @@ jobs:
       pull-requests: write
     env:
       TAG: ${{ github.ref_name }}
+      LC_ALL: C
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -203,8 +204,12 @@ jobs:
             Package.swift
           # Both substitutions must actually land; a no-op sed on a drifted
           # Package.swift must fail the release rather than skip the pin.
-          grep -F "$xcsum" Package.swift >/dev/null
-          grep -F "let releaseTag = \"$TAG\"" Package.swift >/dev/null
+          pin_tag_lines="$(grep -cE "^[[:space:]]*let releaseTag = \"$TAG\"[[:space:]]*(//.*)?$" Package.swift || true)"
+          pin_sum_lines="$(grep -cE "^[[:space:]]*checksum: \"$xcsum\"[[:space:]]*(//.*)?$" Package.swift || true)"
+          if [ "$pin_tag_lines" != "1" ] || [ "$pin_sum_lines" != "1" ]; then
+            echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
+            exit 1
+          fi
           # A second checksum line would silently receive the same pin;
           # refuse if the file ever gains additional binary targets.
           if [ "$(grep -c 'checksum:' Package.swift)" != "1" ]; then
