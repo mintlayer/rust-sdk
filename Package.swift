@@ -34,7 +34,7 @@ let package = Package(
             name: "MintlayerWalletBindingsFFI",
             url: "\(releaseBaseUrl)/MintlayerWalletBindings.xcframework.zip",
             // Replaced by the release workflow when the artifact is attached.
-            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+            checksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"
         ),
         // The generated Swift wrapper ships as source (standard UniFFI
         // practice); the FFI static library inside the XCFramework is what
