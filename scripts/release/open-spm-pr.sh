@@ -191,18 +191,25 @@ elif [ -n "${origin_pin_sum_raw}" ] && [ -z "${origin_pin_sum}" ]; then
   # A checksum line exists but is not 64 lowercase hex: mangled pin.
   echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${origin_pin_sum_raw}")"
   exit 1
-elif { cmp="$(semver_cmp "${VERSION}" "${origin_version}")"; [[ "${cmp}" =~ ^-?[012]$ ]]; } && [ "${cmp}" -le 0 ]; then
-  # A deactivated (zeroed-checksum) pin whose release marker is
-  # newer-or-equal: main claims ${origin_version} with no active
-  # checksum. Pinning ${VERSION} here would leave the marker and the
-  # checksum in conflict; manual repair required. semver_cmp keeps this
-  # aligned with the active-pin path at prerelease/build edges.
-  echo "::error::origin/${DEFAULT_BRANCH} carries a deactivated pin for ${origin_version} (>= ${VERSION}); refusing to pin - repair the default branch manually"
-  exit 1
-elif [ -z "${origin_pin_sum_raw}" ] && [ -n "${origin_pin_tag}" ]; then
-  # A tag line without any checksum line: mangled pin.
-  echo "::error::origin/${DEFAULT_BRANCH} carries a releaseTag without a checksum line: $(esc "${origin_pin_tag}")"
-  exit 1
+elif [ -n "${origin_pin_tag}" ]; then
+  # Not active, not checksum-mangled: either a deactivated
+  # (zeroed-checksum) pin or a tag line without any checksum line.
+  # Both refuse; the deactivated path orders with the comparator
+  # validated out-of-band, so a malformed result refuses instead of
+  # slipping past the guard.
+  if [ -z "${origin_pin_sum_raw}" ]; then
+    echo "::error::origin/${DEFAULT_BRANCH} carries a releaseTag without a checksum line: $(esc "${origin_pin_tag}")"
+    exit 1
+  fi
+  cmp="$(semver_cmp "${VERSION}" "${origin_version}")"
+  if [[ ! "${cmp}" =~ ^-?[012]$ ]]; then
+    echo "::error::semver comparison failed for ${VERSION} against ${origin_version}"
+    exit 1
+  fi
+  if [ "${cmp}" -le 0 ]; then
+    echo "::error::origin/${DEFAULT_BRANCH} carries a deactivated pin for ${origin_version} (>= ${VERSION}); refusing to pin - repair the default branch manually"
+    exit 1
+  fi
 fi
 git commit -m "chore: pin the SPM checksum to ${TAG}"
 

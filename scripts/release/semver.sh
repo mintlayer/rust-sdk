@@ -22,9 +22,11 @@ semver_prerelease_cmp() { # <0 if $1 < $2, 0 equal, >0 if $1 > $2
     if [ -z "${x}" ]; then echo -1; return; fi
     if [ -z "${y}" ]; then echo 1; return; fi
     # Numeric identifiers are lower than alphanumeric ones. Two numeric
-    # identifiers compare by digit length then bytes (semver forbids
-    # leading zeros, so this equals numeric order for any length — no
-    # arithmetic, no overflow).
+    # identifiers compare by digit length then bytes (no arithmetic, no
+    # overflow). The caller regexes admit leading zeros, which semver
+    # forbids; with this comparator '01' < '1' deterministically, while
+    # the numeric-triple path treats 10#'01' == 10#'1' as equal — a
+    # documented deviation between the two sites, not a bug.
     if [[ "${x}" =~ ^[0-9]+$ ]] && [[ "${y}" =~ ^[0-9]+$ ]]; then
       if [ "${#x}" -ne "${#y}" ]; then
         [ "${#x}" -lt "${#y}" ] && { echo -1; return; }

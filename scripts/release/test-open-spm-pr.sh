@@ -988,8 +988,10 @@ rc=$?
 LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "0" ]; then ok "guard allows deactivated older pin"; else bad "guard allows deactivated older pin" "exit ${rc}"; fi
 
-# 60. Supersede: meta-suffix stale marker (>= precedence) -> refuse.
-set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_newer
+# 60. Supersede: build-metadata suffix on the open pin branch compares
+# EQUAL (metadata excluded from precedence) -> refuse like any >=
+# marker.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_meta
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
@@ -1001,6 +1003,23 @@ if [ "${rc}" = "1" ] && grep -q "close or merge it before releasing" <<< "$(cat 
   ok "supersede refuses meta-suffix stale pin"
 else
   bad "supersede refuses meta-suffix stale pin" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 61. Supersede: plain newer stale marker (9.9.9, cmp_old = -1) ->
+# refuse.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_newer
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "close or merge it before releasing" <<< "$(cat "${OUT}")"; then
+  ok "supersede refuses a newer open pin PR"
+else
+  bad "supersede refuses a newer open pin PR" "exit ${rc}: $(cat "${OUT}")"
 fi
 assert_no_mutations
 printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
