@@ -168,8 +168,9 @@ fi
 # must refuse here exactly like it refuses at merge time.
 origin_pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
+# $-anchored hex shape, consistent with the guard and the merge gate.
 origin_pin_sum_raw="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^checksum: "' | head -1 | grep -oE '"[^"]*"' | tr -d '"' || true)"
+  | grep -E '^checksum: "[0-9a-f]{64}"$' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
 origin_pin_sum="$(printf '%s\n' "${origin_pin_sum_raw}" \
   | grep -oE '^[0-9a-f]{64}$' || true)"
 origin_pin_active=0

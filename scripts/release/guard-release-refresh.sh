@@ -66,8 +66,10 @@ fi
 # such as '+').
 pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -E '^let releaseTag = "wallet-bindings-v' | grep -oE 'wallet-bindings-v[^"]*')"
+# $-anchored: trailing garbage on the checksum line is a mangled state,
+# not a usable pin (same grammar as check-pin-order.sh's checksum_valid).
 pin_sum="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^checksum: "[0-9a-f]{64}"' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
+  | grep -E '^checksum: "[0-9a-f]{64}"$' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
 # A mangled releaseTag (e.g. bare 'wallet-bindings-v' with no version)
 # must fail closed: clobbering assets on a main with a broken pin would
 # desync SPM resolution exactly like a checksum mismatch would.

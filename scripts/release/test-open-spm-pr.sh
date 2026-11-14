@@ -1107,6 +1107,23 @@ rc=$?
 LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "0" ]; then ok "guard allows deactivated older pin"; else bad "guard allows deactivated older pin" "exit ${rc}"; fi
 
+# 63b. Guard: trailing garbage on the base checksum line -> the hex
+# extraction refuses it as mangled (same-tag refresh cannot succeed
+# against a corrupted pin).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"x\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "do not match the pin" <<< "$(cat "${OUT}")"; then
+  ok "guard refuses trailing garbage on the base checksum"
+else
+  bad "guard refuses trailing garbage on the base checksum" "exit ${rc}: $(cat "${OUT}")"
+fi
+
 # 64. Guard: unparseable origin pin tag (no version) -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
@@ -1377,7 +1394,10 @@ if [ "$(semver_cmp_check "1.2.3" "1.2.3-rc.1")" = "1" ] \
   && [ "$(semver_cmp_check "1.2.3+meta.a" "1.2.3+meta.b")" = "0" ] \
   && [ "$(semver_cmp_check "1.2.3" "1.2.3+meta")" = "0" ] \
   && [ "$(semver_cmp_check "1.2.3-2" "1.2.3-18446744073709551617")" = "-1" ] \
-  && [ "$(semver_cmp_check "1.02.3" "1.2.3")" = "0" ]; then
+  && [ "$(semver_cmp_check "1.02.3" "1.2.3")" = "0" ] \
+  && [ "$(semver_cmp_check "1.2.3-a..b" "1.2.3-a.b")" = "-1" ] \
+  && [ "$(semver_cmp_check "1.2.3-a.b" "1.2.3-a..b")" = "1" ] \
+  && [ "$(semver_cmp_check "1.2.3-a." "1.2.3-a.b")" = "-1" ]; then
   ok "semver comparator unit checks"
 else
   bad "semver comparator unit checks" "unexpected comparator output"
