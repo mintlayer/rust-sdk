@@ -96,7 +96,6 @@ fi
 if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
   # Post-push re-lookup simulation: the second list returns empty when
   # the knob is set (the pre-push PR merged in flight).
-  printf 'x\n' >> "${CASE_DIR}/pr_list_calls" 2>/dev/null || true
   # relookup_fails: fail ONLY the post-push re-lookup (the second
   # --head list), leaving the pre-flight canary green.
   if [ "$3" = "--head" ] || [ "$4" = "--head" ]; then
@@ -1054,9 +1053,11 @@ else
   bad "supersede refuses a newer open pin PR" "exit ${rc}: $(cat "${OUT}")"
 fi
 
-# 61. Guard over a deactivated newer-or-equal marker: refresh allowed (rewind refusal enforced upstream by open-spm-pr.sh).
-set_fixtures 0 1 'let releaseTag = "wallet-bindings-v9.9.9"
-            checksum: "0000000000000000000000000000000000000000000000000000000000000000"' pr.none
+# 61. Guard over a deactivated NEWER marker (v9.9.9, zeroed checksum):
+# refresh allowed - the rewind refusal for this shape lives upstream in
+# open-spm-pr.sh, the guard only refuses same-tag repairs.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
@@ -1067,9 +1068,10 @@ LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "0" ]; then ok "guard allows refresh over deactivated newer marker (enforced upstream)"; else bad "guard allows refresh over deactivated newer marker" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
-# 62. Guard over a deactivated equal-version marker: refresh allowed (enforced upstream).
-set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3"
-            checksum: "0000000000000000000000000000000000000000000000000000000000000000"' pr.none
+# 62. Guard over a deactivated EQUAL-version marker (v1.2.3, zeroed
+# checksum): same-tag repair path -> refuses on the checksum mismatch.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
@@ -1077,12 +1079,13 @@ set_fixtures 0 1 'let releaseTag = "wallet-bindings-v1.2.3"
     > "${OUT}" 2>&1 )
 rc=$?
 LOG_CONTENTS="$(cat "${LOG}")"
-if [ "${rc}" = "0" ]; then ok "guard allows refresh over deactivated equal marker (enforced upstream)"; else bad "guard allows refresh over deactivated equal marker" "exit ${rc}: $(cat "${OUT}")"; fi
+if [ "${rc}" = "1" ] && grep -q "do not match the pin" <<< "$(cat "${OUT}")"; then ok "guard refuses a deactivated equal-version marker"; else bad "guard refuses a deactivated equal-version marker" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
-# 63. Guard: deactivated OLDER pin -> allow (forward release).
-set_fixtures 0 1 'let releaseTag = "wallet-bindings-v0.1.0"
-            checksum: "0000000000000000000000000000000000000000000000000000000000000000"' pr.none
+# 63. Guard: deactivated OLDER pin (v0.1.0, zeroed checksum) -> allow
+# (forward release).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v0.1.0"\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
@@ -1281,7 +1284,6 @@ assert_no_mutations
 # instead of claiming it updated a merged PR's head.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
 printf '1' > "${TMP}/second_pr_list_empty"
-rm -f "${TMP}/pr_list_calls"
 : > "${LOG}"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
@@ -1289,7 +1291,6 @@ rm -f "${TMP}/pr_list_calls"
     > "${OUT}" 2>&1 )
 rc=$?
 printf '0' > "${TMP}/second_pr_list_empty"
-rm -f "${TMP}/pr_list_calls"
 LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "0" ] && grep -q "gh pr create" "${LOG}" && ! grep -q "updated its head branch" "${LOG}"; then
   ok "post-push empty re-lookup falls through to create"
