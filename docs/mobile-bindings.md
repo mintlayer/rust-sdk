@@ -22,12 +22,11 @@ against captured reference outputs of `@mintlayer/wasm-lib` 1.4.0 (see
 
 | Platform | Artifact | Architectures |
 |---|---|---|
-| Android 6.0+ (API 24) | `mintlayer-wallet-bindings-<ver>.aar` | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
+| Android 7.0+ (API 24) | `mintlayer-wallet-bindings-<ver>.aar` | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
 | iOS 15+ | `MintlayerWalletBindings.xcframework` | `ios-arm64` (device), `ios-arm64_x86_64-simulator` |
 
-The Intel simulator slice (`x86_64-apple-ios-sim`) is omitted: recent Xcode
-releases no longer ship Intel simulator runtimes, and Rust 1.92 does not
-publish that target's standard library.
+The Intel simulator slice (`x86_64-apple-ios`) is omitted: recent
+Xcode releases no longer ship Intel simulator runtimes.
 
 ## API surface
 
@@ -171,8 +170,31 @@ Binding releases are tagged `wallet-bindings-vX.Y.Z` (matching the
 `version` in `bindings/Cargo.toml`). Pushing such a tag triggers the
 release workflow, which builds the AAR and the XCFramework from the
 tagged commit, attaches them with a `SHA256SUMS` manifest to the GitHub
-release, and pins the SPM checksum in the root `Package.swift` to the
-released artifact. Consumers never need a Rust toolchain.
+release, and then opens a pull request that pins the SPM checksum in the
+root `Package.swift` to the released artifact. The release exists before
+the pin PR is opened; a maintainer merges that pin PR to activate SPM
+resolution for the release. The `ci.yml` "Pin ordering" gate applies
+to every pull request targeting the default branch and to every push
+of the reserved `pin-spm-checksum-*` branches that edits
+`Package.swift`, whatever the head branch is named: the pinned
+checksum must match the `SHA256SUMS` published for the release the
+pin names (an unverifiable pin would strand every SPM consumer on a
+resolution failure), and the pin must advance the release currently
+on the default branch — a
+rewind or same-version repair is refused. Heads on the reserved
+`pin-spm-checksum-*` namespace additionally must pin exactly the
+release their branch name declares. On pull_request events the gate
+code is checked out from the base branch (PR content cannot alter the
+enforcement logic); on push events the pushed branch's code runs with
+ordinary branch-CI privilege. Recommended hardening: protect the
+`pin-spm-checksum-*` branch namespace (restrict who may push it) —
+bot pin PRs opened with the workflow token emit no pull_request CI
+events, so namespace protection plus the creation-time rewind guard
+are the controls for them. A pre-automation legacy branch
+(`pin-spm-checksum-v0.1.0`) can be deleted once this flow merges;
+both the gate and the supersede loop tolerate its `v` suffix.
+
+Consumers never need a Rust toolchain.
 The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded
 in the repository `CHANGELOG.md`.

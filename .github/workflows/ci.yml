@@ -1,12 +1,15 @@
 name: CI
 
+# Workflow triggers cannot use expressions: these branch filters
+# hardcode "main" as the default branch. The gate and the release
+# scripts derive the default branch dynamically, but a default-branch
+# RENAME must also update these two filter lines or PR-side gating
+# silently stops running.
 on:
   push:
-    branches: [main]
-    paths-ignore: [".github/**"]
+    branches: [main, 'pin-spm-checksum-**']
   pull_request:
     branches: [main]
-    paths-ignore: [".github/**"]
 
 # The crate jobs never need more than read access.
 permissions:
@@ -16,12 +19,56 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Merge-time pin-order enforcement: a checksum-pin PR must not
+  # downgrade the release pinned on the default branch. Runs on PRs
+  # touching Package.swift; branch protection can require it.
+  pin-order:
+    name: Pin ordering
+    # Covers human-opened pin PRs (pull_request) and manual/re-run pushes
+    # to the reserved namespace (push). Bot pin PRs opened with
+    # GITHUB_TOKEN do not emit either event; they are enforced at
+    # creation time by the release workflow's rewind guard, which also
+    # supersedes older open pin PRs.
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/pin-spm-checksum-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LC_ALL: C
+    steps:
+      # On pull_request events the gate code and the current pin state
+      # come from the trusted base branch; PR content is only ever read
+      # as data. On push events the pushed branch's code runs, which is
+      # ordinary branch-CI privilege (read-only, no secrets) under the
+      # documented force-push risk of the reserved namespace.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse a downgrading pin
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.repository.default_branch }}
+          HEAD_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Diff-gated applicability, checksum-to-release binding, and
+          # ordering enforcement all live in one tested script (the
+          # stub harness covers it); reserved-namespace heads get
+          # strict tag equality, every other Package.swift edit gets
+          # ordering-only enforcement.
+          scripts/release/pin-order-gate.sh
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       # Pinned to the MSRV so rustfmt matches the version clippy/test use.
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
         with:
@@ -37,7 +84,9 @@ jobs:
       matrix:
         features: ["--no-default-features", "--no-default-features --features node", "--no-default-features --features indexer", "--no-default-features --features wallet", "--no-default-features --features crypto", "--all-features"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
         with:
           components: clippy
@@ -55,7 +104,9 @@ jobs:
       matrix:
         features: ["--no-default-features", "--no-default-features --features node", "--no-default-features --features indexer", "--no-default-features --features wallet", "--no-default-features --features crypto", "--all-features"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
@@ -80,7 +131,9 @@ jobs:
         # mintlayer-core git checkouts (same reason mintlayer-core's own
         # build.yml does this).
         run: echo "CARGO_HOME=C:\crg" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
@@ -93,7 +146,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo doc --all-features --locked --no-deps
@@ -107,10 +162,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: 20
           cache: npm
@@ -127,5 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - run: ./scripts/check-license.sh
