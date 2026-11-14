@@ -107,7 +107,8 @@ fi
 # substring 'let releaseTag' is safe because the download-URL line
 # never contains it (its \(releaseTag) interpolation is Swift string
 # interpolation inside a string literal and survives stripping; the
-# line reads 'let releaseBaseUrl = ...').
+# assignment reads 'let releaseBaseUrl = ...' with the URL string
+# following on the next line).
 current_bearing="$(printf '%s\n' "${origin_code}" | { grep -o 'let releaseTag' || true; } | wc -l | tr -d ' ')"
 current_matches="$(printf '%s\n' "${origin_code}" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"

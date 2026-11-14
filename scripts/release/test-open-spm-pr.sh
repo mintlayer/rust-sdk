@@ -800,6 +800,16 @@ printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" 
 rc=$?
 if [ "${rc}" = "1" ] && grep -q "carries no code lines" <<< "$(cat "${OUT}")"; then ok "pin order refuses a comment-only base"; else bad "pin order refuses a comment-only base" "exit ${rc}: $(cat "${OUT}")"; fi
 
+# A base tag with an unparseable version token (empty version after the
+# wallet-bindings-v prefix) -> refuse, mirroring the sibling scripts.
+printf 'let releaseTag = "wallet-bindings-v"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "" > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ] && grep -q "unparseable current pin version" <<< "$(cat "${OUT}")"; then ok "pin order refuses an unparseable current pin version"; else bad "pin order refuses an unparseable current pin version" "exit ${rc}: $(cat "${OUT}")"; fi
+
 # Broken-prefix variant: a double space before '=' breaks the anchored
 # prefix itself — detection must not be prefix-anchored.
 printf 'let releaseTag  = "wallet-bindings-v1.0.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"

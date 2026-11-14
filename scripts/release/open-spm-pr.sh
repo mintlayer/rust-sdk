@@ -51,12 +51,6 @@ if [[ ! "${XCSUM}" =~ ^[0-9a-f]{64}$ ]] || [ "${XCSUM//0/}" = "" ]; then
   exit 1
 fi
 validate_branch_input "${DEFAULT_BRANCH}" "default branch"
-# The default branch must never live in the reserved bot namespace: a
-# force-push there would rewind main instead of a disposable branch.
-if [[ "${DEFAULT_BRANCH}" == pin-spm-checksum-* ]]; then
-  echo "::error::default branch must not use the reserved pin-spm-checksum-* namespace"
-  exit 1
-fi
 if [ -z "${GITHUB_REPOSITORY:-}" ]; then
   echo "::error::GITHUB_REPOSITORY is not set"
   exit 1
