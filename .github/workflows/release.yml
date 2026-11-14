@@ -13,8 +13,10 @@ on:
       - "wallet-bindings-v*"
 
 # Releases are fully serialized: two tags cut near-simultaneously would
-# race the pin PRs (the rewind guard runs at PR-creation time, so merge
-# order would decide which pin wins). One group queues every release.
+# race the pin PRs and the asset publishes (interleaved supersede
+# closes and --clobber uploads from two runs could interleave). The
+# merge-time pin-order gate refuses rewinds regardless, but one group
+# queues every release to keep those steps from interleaving.
 concurrency:
   group: release-${{ github.repository }}
   cancel-in-progress: false

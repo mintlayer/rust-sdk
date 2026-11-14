@@ -80,7 +80,8 @@ if [ "${pin_tag}" = "${TAG}" ]; then
     echo "rebuilt artifacts match the merged pin; asset refresh proceeds safely"
     exit 0
   fi
-  echo "::error::rebuilt artifacts (checksum $(esc "${XCSUM}")) do not match the pin merged on $(esc "${DEFAULT_BRANCH}") ($(esc "${pin_sum}")); release assets left untouched - repair manually"
+  pin_sum_display="${pin_sum:-<non-hex/mangled>}"
+  echo "::error::rebuilt artifacts (checksum $(esc "${XCSUM}")) do not match the pin merged on $(esc "${DEFAULT_BRANCH}") ($(esc "${pin_sum_display}")); release assets left untouched - repair manually"
   exit 1
 fi
 # A pin for a DIFFERENT release is the normal forward-release state:

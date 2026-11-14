@@ -26,7 +26,10 @@ semver_prerelease_cmp() { # <0 if $1 < $2, 0 equal, >0 if $1 > $2
     # overflow). The caller regexes admit leading zeros, which semver
     # forbids; with this comparator '01' > '1' deterministically, while
     # the numeric-triple path treats 10#'01' == 10#'1' as equal — a
-    # documented deviation between the two sites, not a bug.
+    # documented deviation between the two sites, not a bug. The
+    # caller regexes also admit empty prerelease identifiers
+    # (1.2.3-a..b); the comparator orders the empty identifier lowest,
+    # deterministically - same deviation class as leading zeros.
     if [[ "${x}" =~ ^[0-9]+$ ]] && [[ "${y}" =~ ^[0-9]+$ ]]; then
       if [ "${#x}" -ne "${#y}" ]; then
         [ "${#x}" -lt "${#y}" ] && { echo -1; return; }

@@ -209,7 +209,11 @@ elif [ -n "${origin_pin_tag}" ]; then
   # validated out-of-band, so a malformed result refuses instead of
   # slipping past the guard.
   if [ -z "${origin_pin_sum_raw}" ]; then
-    echo "::error::origin/${DEFAULT_BRANCH} carries a releaseTag without a checksum line: $(esc "${origin_pin_tag}")"
+    if printf '%s\n' "${origin_code}" | grep -qE '^checksum:'; then
+      echo "::error::origin/${DEFAULT_BRANCH} carries a checksum line with an empty value alongside ${origin_pin_tag}; repair manually"
+    else
+      echo "::error::origin/${DEFAULT_BRANCH} carries a releaseTag without a checksum line: $(esc "${origin_pin_tag}")"
+    fi
     exit 1
   fi
   cmp="$(semver_cmp "${VERSION}" "${origin_version}")"

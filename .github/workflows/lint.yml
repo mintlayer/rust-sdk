@@ -1,5 +1,7 @@
 name: Lint workflows and scripts
 
+# Like ci.yml, these branch filters hardcode "main"; workflow triggers
+# cannot use expressions, so a default-branch rename must update them.
 on:
   push:
     branches: [main]

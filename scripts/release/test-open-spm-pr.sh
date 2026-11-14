@@ -639,10 +639,10 @@ assert_no_mutations
 printf '0' > "${TMP}/show_fails"
 reset_origin
 
-# 42. Comment decoys inside an unterminated block comment; the real
-# code pin (v1.0.0) follows the block. Correct stripping sees 1.2.3 >
-# 1.0.0 and allows; a stripping regression leaks the decoys (mangled
-# multi-pin state, or >= the incoming version) and refuses.
+# 42. Comment decoys inside a terminated block comment; the real code
+# pin (v1.0.0) follows the block. Correct stripping sees 1.2.3 > 1.0.0
+# and allows; a stripping regression leaks the decoys (mangled multi-pin
+# state, or >= the incoming version) and refuses.
 printf '/*\nchecksum: "1111111111111111111111111111111111111111111111111111111111111111"\nlet releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTag = "wallet-bindings-v9.9.9"\n*/\nlet releaseTag = "wallet-bindings-v1.0.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/origin_swift"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
@@ -947,6 +947,18 @@ printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" 
 run_gate "pin-spm-checksum-v1.3.0"
 if [ "${rc}" = "0" ]; then ok "gate tolerates a legacy v-suffix branch name"; else bad "gate tolerates a legacy v-suffix branch name" "exit ${rc}: $(cat "${OUT}")"; fi
 
+# A failed PR-head fetch refuses before any ordering decision.
+printf '1' > "${TMP}/fetch_fails"
+printf '0' > "${TMP}/head_touched"
+run_gate "feature"
+printf '0' > "${TMP}/fetch_fails"
+printf '1' > "${TMP}/head_touched"
+if [ "${rc}" = "1" ] && grep -q "cannot fetch the PR head" "${OUT}"; then
+  ok "gate fails closed on a failed PR-head fetch"
+else
+  bad "gate fails closed on a failed PR-head fetch" "exit ${rc}: $(cat "${OUT}")"
+fi
+
 # A reserved-namespace branch whose suffix is not a semver -> refuse
 # at the derivation check.
 run_gate "pin-spm-checksum-oops"
@@ -1187,6 +1199,23 @@ if [ "${rc}" = "1" ] && grep -q "pin-bearing line" <<< "$(cat "${OUT}")"; then
   ok "release refuses extra pin-bearing base lines"
 else
   bad "release refuses extra pin-bearing base lines" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 59g. A checksum line with an EMPTY value -> refuse with the precise
+# diagnostic (an empty value is not an absent line).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: ""\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "checksum line with an empty value" <<< "$(cat "${OUT}")"; then
+  ok "release refuses an empty-value checksum"
+else
+  bad "release refuses an empty-value checksum" "exit ${rc}: $(cat "${OUT}")"
 fi
 assert_no_mutations
 
