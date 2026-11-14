@@ -1180,7 +1180,8 @@ LOG_CONTENTS="$(cat "${LOG}")"
 # The upstream counts guard refuses this shape first (1 tag, 0
 # checksums); the inner tag-without-checksum branch below it is
 # unreachable for this fixture and stays as defense in depth.
-if [ "${rc}" = "1" ] && grep -q "0 checksum assignments" <<< "$(cat "${OUT}")"; then ok "tag-without-checksum origin refused"; else bad "tag-without-checksum origin refused" "exit ${rc}: $(cat "${OUT}")"; fi
+# The triaged counts guard now names the missing-checksum-line shape.
+if [ "${rc}" = "1" ] && grep -q "without a checksum line" <<< "$(cat "${OUT}")"; then ok "tag-without-checksum origin refused"; else bad "tag-without-checksum origin refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
 # 68. A hand-mangled base tag (wallet-bindings-vv1.2.3) must refuse
@@ -1229,7 +1230,7 @@ printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: ""\n' > "${TMP}/ori
     > "${OUT}" 2>&1 )
 rc=$?
 LOG_CONTENTS="$(cat "${LOG}")"
-if [ "${rc}" = "1" ] && grep -q "checksum line with an empty value" <<< "$(cat "${OUT}")"; then
+if [ "${rc}" = "1" ] && grep -q "mangled or empty checksum value" <<< "$(cat "${OUT}")"; then
   ok "release refuses an empty-value checksum"
 else
   bad "release refuses an empty-value checksum" "exit ${rc}: $(cat "${OUT}")"

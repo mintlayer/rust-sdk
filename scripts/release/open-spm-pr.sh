@@ -153,14 +153,21 @@ origin_code="$(strip_swift_comments "${origin_swift}")"
 # after the closing quote) refuses here exactly like it refuses at
 # merge time.
 tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
-sum_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "' || true)"
+sum_wellformed="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "[0-9a-f]{64}"$' || true)"
+checksum_any="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum:' || true)"
 # Pin-bearing occurrence count, mirroring the merge gate: extras beside
 # the canonical assignment (broken prefix, releaseTagX variants) would
 # open a pin PR the gate is guaranteed to reject. The download-URL line
 # never contains the substring 'let releaseTag'.
 tag_bearing="$(printf '%s\n' "${origin_code}" | { grep -o 'let releaseTag' || true; } | wc -l | tr -d ' ')"
-if [ "${tag_assignments}" != "1" ] || [ "${sum_assignments}" != "1" ] || [ "${tag_bearing}" != "1" ]; then
-  echo "::error::origin/${DEFAULT_BRANCH} carries ${tag_assignments} canonical releaseTag assignments, ${tag_bearing} pin-bearing line(s) and ${sum_assignments} checksum assignments; expected exactly one canonical of each"
+if [ "${tag_assignments}" != "1" ] || [ "${sum_wellformed}" != "1" ] || [ "${checksum_any}" != "1" ] || [ "${tag_bearing}" != "1" ]; then
+  if [ "${checksum_any}" = "0" ]; then
+    echo "::error::origin/${DEFAULT_BRANCH} carries a releaseTag without a checksum line"
+  elif [ "${sum_wellformed}" = "0" ]; then
+    echo "::error::origin/${DEFAULT_BRANCH} carries a mangled or empty checksum value; repair manually"
+  else
+    echo "::error::origin/${DEFAULT_BRANCH} carries ${tag_assignments} canonical releaseTag assignments, ${tag_bearing} pin-bearing line(s) and ${sum_wellformed} checksum assignments; expected exactly one canonical of each"
+  fi
   exit 1
 fi
 # Same extraction/validation the merge gate uses: the whole tag token,
@@ -168,11 +175,10 @@ fi
 # must refuse here exactly like it refuses at merge time.
 origin_pin_tag="$(printf '%s\n' "${origin_code}" \
   | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
-# $-anchored hex shape, consistent with the guard and the merge gate.
-origin_pin_sum_raw="$(printf '%s\n' "${origin_code}" \
-  | grep -E '^checksum: "[0-9a-f]{64}"$' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
-origin_pin_sum="$(printf '%s\n' "${origin_pin_sum_raw}" \
-  | grep -oE '^[0-9a-f]{64}$' || true)"
+# The counts guard above guarantees exactly one well-formed ($-anchored
+# 64-hex) checksum line, so its value extracts unconditionally here.
+origin_pin_sum="$(printf '%s\n' "${origin_code}" \
+  | grep -E '^checksum: "[0-9a-f]{64}"$' | head -1 | grep -oE '[0-9a-f]{64}')"
 origin_pin_active=0
 origin_version=""
 if [ -n "${origin_pin_sum}" ] && [ "${origin_pin_sum}" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
@@ -199,24 +205,11 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi
-elif [ -n "${origin_pin_sum_raw}" ] && [ -z "${origin_pin_sum}" ]; then
-  # A checksum line exists but is not 64 lowercase hex: mangled pin.
-  echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${origin_pin_sum_raw}")"
-  exit 1
 elif [ -n "${origin_pin_tag}" ]; then
-  # Not active, not checksum-mangled: either a deactivated
-  # (zeroed-checksum) pin or a tag line without any checksum line.
-  # Both refuse; the deactivated path orders with the comparator
-  # validated out-of-band, so a malformed result refuses instead of
-  # slipping past the guard.
-  if [ -z "${origin_pin_sum_raw}" ]; then
-    if printf '%s\n' "${origin_code}" | grep -qE '^checksum:'; then
-      echo "::error::origin/${DEFAULT_BRANCH} carries a checksum line with an empty value alongside ${origin_pin_tag}; repair manually"
-    else
-      echo "::error::origin/${DEFAULT_BRANCH} carries a releaseTag without a checksum line: $(esc "${origin_pin_tag}")"
-    fi
-    exit 1
-  fi
+  # Not active and the counts guard verified exactly one well-formed
+  # checksum line: this is a deactivated (zeroed-checksum) pin. Ordering
+  # uses the comparator validated out-of-band, so a malformed result
+  # refuses instead of slipping past the guard.
   cmp="$(semver_cmp "${VERSION}" "${origin_version}")"
   if [[ ! "${cmp}" =~ ^-?[012]$ ]]; then
     echo "::error::semver comparison failed for ${VERSION} against ${origin_version}"
