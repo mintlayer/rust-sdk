@@ -150,13 +150,20 @@ origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" 
 origin_code="$(strip_swift_comments "${origin_swift}")"
 tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v' || true)"
 sum_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "' || true)"
-if [ "${tag_assignments}" != "1" ] || [ "${sum_assignments}" != "1" ]; then
-  echo "::error::origin/${DEFAULT_BRANCH} carries ${tag_assignments} releaseTag and ${sum_assignments} checksum assignments; expected exactly one of each"
+# Pin-bearing occurrence count, mirroring the merge gate: extras beside
+# the canonical assignment (broken prefix, releaseTagX variants) would
+# open a pin PR the gate is guaranteed to reject. The download-URL line
+# never contains the substring 'let releaseTag'.
+tag_bearing="$(printf '%s\n' "${origin_code}" | { grep -o 'let releaseTag' || true; } | wc -l | tr -d ' ')"
+if [ "${tag_assignments}" != "1" ] || [ "${sum_assignments}" != "1" ] || [ "${tag_bearing}" != "1" ]; then
+  echo "::error::origin/${DEFAULT_BRANCH} carries ${tag_assignments} canonical releaseTag assignments, ${tag_bearing} pin-bearing line(s) and ${sum_assignments} checksum assignments; expected exactly one canonical of each"
   exit 1
 fi
+# Same extraction/validation the merge gate uses: the whole tag token,
+# then the full version regex — a hand-mangled 'wallet-bindings-vv1.2.3'
+# must refuse here exactly like it refuses at merge time.
 origin_pin_tag="$(printf '%s\n' "${origin_code}" \
-  | grep -oE 'let releaseTag = "wallet-bindings-v[^"]*"' \
-  | grep -oE 'v[0-9][^"]*' || true)"
+  | grep -E '^let releaseTag = ' | grep -oE 'wallet-bindings-v[^"]*')"
 origin_pin_sum_raw="$(printf '%s\n' "${origin_code}" \
   | grep -E '^checksum: "' | head -1 | grep -oE '"[^"]*"' | tr -d '"' || true)"
 origin_pin_sum="$(printf '%s\n' "${origin_pin_sum_raw}" \
@@ -171,7 +178,7 @@ fi
 # An empty extraction (degenerate 'wallet-bindings-v' line) is itself
 # unparseable.
 if [ -n "${origin_pin_tag}" ]; then
-  origin_version="${origin_pin_tag#v}"
+  origin_version="${origin_pin_tag#wallet-bindings-v}"
 fi
 if [[ ! "${origin_version}" =~ ^[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::origin/${DEFAULT_BRANCH} carries an unparseable pin tag: $(esc "${origin_pin_tag}")"

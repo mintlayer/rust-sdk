@@ -1151,7 +1151,43 @@ LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ] && grep -q "0 checksum assignments" <<< "$(cat "${OUT}")"; then ok "tag-without-checksum origin refused"; else bad "tag-without-checksum origin refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations
 
-# 68. Supersede: build-metadata suffix on the open pin branch compares
+# 68. A hand-mangled base tag (wallet-bindings-vv1.2.3) must refuse
+# exactly like the merge gate refuses it (extraction now uses the whole
+# tag token plus the full version regex).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-vv1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "unparseable pin tag" <<< "$(cat "${OUT}")"; then
+  ok "release refuses a hand-mangled base tag"
+else
+  bad "release refuses a hand-mangled base tag" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 69. An extra pin-bearing line beside the canonical assignment (no
+# matter its anchor) refuses at release time too, mirroring the gate.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"\nlet releaseTagX = "wallet-bindings-v0.1.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "pin-bearing line" <<< "$(cat "${OUT}")"; then
+  ok "release refuses extra pin-bearing base lines"
+else
+  bad "release refuses extra pin-bearing base lines" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 70. Supersede: build-metadata suffix on the open pin branch compares
 # EQUAL (metadata excluded from precedence) -> refuse like any >=
 # marker.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_meta
@@ -1169,7 +1205,7 @@ else
 fi
 assert_no_mutations
 
-# 69. Supersede: a legacy v-suffix stale branch (pin-spm-checksum-
+# 71. Supersede: a legacy v-suffix stale branch (pin-spm-checksum-
 # v0.1.1 -> version 0.1.1 < 1.2.3) is closed like any older pin.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_legacy
 : > "${LOG}"
@@ -1185,7 +1221,7 @@ else
   bad "supersede closes a legacy v-suffix stale pin PR" "exit ${rc}: $(cat "${OUT}")"
 fi
 
-# 70. Reuse-path supersede: an open same-head PR (pr.own) plus a
+# 72. Reuse-path supersede: an open same-head PR (pr.own) plus a
 # stale-older open PR (number 5) -> pr close 5 happens on the reuse
 # path and the run ends with "updated its head branch".
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
@@ -1204,7 +1240,7 @@ else
   bad "reuse-path supersede closes the older PR before the update" "exit ${rc}, close=${CLOSE_LINE}, out=$(cat "${OUT}")"
 fi
 
-# 71. A failing gh pr close fails the run before any push.
+# 73. A failing gh pr close fails the run before any push.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_older
 printf '1' > "${TMP}/pr_close_fails"
 : > "${LOG}"
@@ -1223,7 +1259,7 @@ else
 fi
 assert_no_mutations
 
-# 72. Post-push re-lookup: when the pre-push PR merged in flight (the
+# 74. Post-push re-lookup: when the pre-push PR merged in flight (the
 # second list returns empty), the run falls through to gh pr create
 # instead of claiming it updated a merged PR's head.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.own
@@ -1244,7 +1280,7 @@ else
   bad "post-push empty re-lookup falls through to create" "exit ${rc}: $(cat "${OUT}")"
 fi
 
-# 73. A failing post-push re-lookup fails the run (the pre-flight
+# 75. A failing post-push re-lookup fails the run (the pre-flight
 # canary stays green; the branch was already pushed).
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf '1' > "${TMP}/relookup_fails"
@@ -1264,7 +1300,7 @@ else
   bad "post-push re-lookup failure fails closed" "exit ${rc}: $(cat "${OUT}")"
 fi
 
-# 73. Supersede: plain newer stale marker (9.9.9, cmp_old = -1) ->
+# 76. Supersede: plain newer stale marker (9.9.9, cmp_old = -1) ->
 # refuse.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_newer
 : > "${LOG}"
@@ -1282,7 +1318,7 @@ fi
 assert_no_mutations
 printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
 
-# 74. semver.sh unit checks (sourced directly).
+# 77. semver.sh unit checks (sourced directly).
 # shellcheck source=/dev/null
 semver_tests="${SCRIPT_DIR}/semver.sh"
 semver_cmp_check() {
