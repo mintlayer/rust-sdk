@@ -101,16 +101,16 @@ git fetch origin "+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
 origin_swift="$(git show "origin/${BASE_BRANCH}:Package.swift" 2>/dev/null)" \
   || { echo "::error::cannot read origin/${BASE_BRANCH}:Package.swift"; exit 1; }
 origin_code="$(strip_swift_comments "${origin_swift}")"
-# The same prefix count every sibling script uses, plus the anchored
-# count: a prefix-matching but mangled pin line on the base (stray
-# suffix, double space) would otherwise read as "no pin" and let a
-# rewind pass.
-current_prefix="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = ' || true)"
+# Mangle detection is not prefix-anchored: ANY releaseTag-bearing code
+# line on the base that is not the canonical assignment (broken prefix,
+# stray suffix, doubled spaces) must refuse — otherwise a corrupted
+# base would read as "no pin" and let a rewind pass.
+current_bearing="$(printf '%s\n' "${origin_code}" | grep -c 'releaseTag' || true)"
 current_matches="$(printf '%s\n' "${origin_code}" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
 if [ "${current_matches}" = "0" ]; then
-  if [ "${current_prefix}" != "0" ]; then
-    echo "::error::origin/${BASE_BRANCH} carries ${current_prefix} mangled pin line(s) and no well-formed one; refusing (repair manually)"
+  if [ "${current_bearing}" != "0" ]; then
+    echo "::error::origin/${BASE_BRANCH} carries ${current_bearing} mangled pin line(s) and no well-formed one; refusing (repair manually)"
     exit 1
   fi
   echo "no pin on ${BASE_BRANCH}; any pin order is acceptable"

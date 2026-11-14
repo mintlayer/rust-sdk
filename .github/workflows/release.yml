@@ -287,7 +287,10 @@ jobs:
             # not affect semver finality, so only the pre-release
             # hyphen disqualifies.
             latest_flag="--latest"
-            case "$VERSION" in *-*) latest_flag="--latest=false" ;; esac
+            # Test only the pre-metadata part: a hyphen inside build
+            # metadata (+build-2) does not make the release a
+            # pre-release.
+            case "${VERSION%%+*}" in *-*) latest_flag="--latest=false" ;; esac
             gh release create "$TAG" \
               dist/mintlayer-wallet-bindings-*.aar \
               dist/MintlayerWalletBindings.xcframework.zip \

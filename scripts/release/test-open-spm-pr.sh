@@ -753,6 +753,16 @@ printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" 
   bash "${ORDER}" main "" > "${OUT}" 2>&1 )
 rc=$?
 if [ "${rc}" = "1" ] && grep -q "mangled pin line" <<< "$(cat "${OUT}")"; then ok "pin order refuses a prefix-mangled base pin"; else bad "pin order refuses a prefix-mangled base pin" "exit ${rc}: $(cat "${OUT}")"; fi
+
+# Broken-prefix variant: a double space before '=' breaks the anchored
+# prefix itself — detection must not be prefix-anchored.
+printf 'let releaseTag  = "wallet-bindings-v1.0.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "" > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ] && grep -q "mangled pin line" <<< "$(cat "${OUT}")"; then ok "pin order refuses a broken-prefix base pin"; else bad "pin order refuses a broken-prefix base pin" "exit ${rc}: $(cat "${OUT}")"; fi
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
 ( cd "${STUBS}/repo" && \
