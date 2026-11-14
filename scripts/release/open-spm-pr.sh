@@ -273,6 +273,16 @@ OLD_PRS
 # the bot commit.
 git push --force origin "${BRANCH}"
 
+# Re-run the open-PR lookup: the PR found before the supersede loop may
+# have been merged by a maintainer while this run was in flight. In
+# that window an "updated its head branch" verdict would end the run
+# green with NO open pin PR for the release, so the post-push state is
+# authoritative for the reuse-vs-create decision.
+existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
+  --json number,headRepositoryOwner,isCrossRepository,baseRefName \
+  --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")" \
+  || { echo "::error::failed to re-list existing pin PRs after the push"; exit 1; }
+
 if [ -n "${existing_pr}" ]; then
   echo "checksum-pin PR already exists (#${existing_pr}); updated its head branch"
 else
