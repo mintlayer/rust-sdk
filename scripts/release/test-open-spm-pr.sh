@@ -64,9 +64,7 @@ case "$1 $2" in
   "fetch origin" | "fetch --unshallow" | "fetch --no-tags")
     [ "$(cat "${CASE_DIR}/fetch_fails" 2>/dev/null || echo 0)" = "1" ] && exit 1
     exit 0 ;;
-  "diff --name-only")
-    [ "$(cat "${CASE_DIR}/head_touched" 2>/dev/null || echo 0)" = "1" ] && echo "Package.swift"
-    exit 0 ;;
+
   "rev-parse HEAD") cat "${CASE_DIR}/head_commit" ;;
   "show origin/"*)
     if [ "$(cat "${CASE_DIR}/show_fails" 2>/dev/null || echo 0)" = "1" ]; then
@@ -862,7 +860,7 @@ printf 'SHA256SUMS for the release\n%s  MintlayerWalletBindings.xcframework.zip\
 printf '0' > "${TMP}/release_download_fails"
 
 # Untouched Package.swift -> skip without reading anything.
-printf '0' > "${TMP}/head_touched"
+printf '0' > "${TMP}/default_diff"
 run_gate() {
   ( cd "${STUBS}/repo" && \
     PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
@@ -889,7 +887,7 @@ else
 fi
 
 # Touched + forward pin bound to the published sums -> allow.
-printf '1' > "${TMP}/head_touched"
+printf '1' > "${TMP}/default_diff"
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
 run_gate "feature"
 if [ "${rc}" = "0" ]; then ok "gate allows a bound forward pin"; else bad "gate allows a bound forward pin" "exit ${rc}: $(cat "${OUT}")"; fi
@@ -925,18 +923,18 @@ fi
 
 # Push event: same binding and ordering without the PR-head fetch.
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
-printf '1' > "${TMP}/head_touched"
+printf '1' > "${TMP}/default_diff"
 run_gate_push "feature"
 if [ "${rc}" = "0" ]; then ok "gate push event allows a bound forward pin"; else bad "gate push event allows a bound forward pin" "exit ${rc}: $(cat "${OUT}")"; fi
 
-printf '0' > "${TMP}/head_touched"
+printf '0' > "${TMP}/default_diff"
 run_gate_push "feature"
 if [ "${rc}" = "0" ] && grep -q "untouched" "${OUT}"; then
   ok "gate push event skips an untouched Package.swift"
 else
   bad "gate push event skips an untouched Package.swift" "exit ${rc}: $(cat "${OUT}")"
 fi
-printf '1' > "${TMP}/head_touched"
+printf '1' > "${TMP}/default_diff"
 
 # Reserved namespace: strict tag equality against the branch name.
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
@@ -959,10 +957,10 @@ if [ "${rc}" = "0" ]; then ok "gate tolerates a legacy v-suffix branch name"; el
 
 # A failed PR-head fetch refuses before any ordering decision.
 printf '1' > "${TMP}/fetch_fails"
-printf '0' > "${TMP}/head_touched"
+printf '0' > "${TMP}/default_diff"
 run_gate "feature"
 printf '0' > "${TMP}/fetch_fails"
-printf '1' > "${TMP}/head_touched"
+printf '1' > "${TMP}/default_diff"
 if [ "${rc}" = "1" ] && grep -q "cannot fetch the PR head" "${OUT}"; then
   ok "gate fails closed on a failed PR-head fetch"
 else

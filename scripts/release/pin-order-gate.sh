@@ -45,12 +45,17 @@ fi
 
 # Fail closed on diff errors: an unreadable head (e.g. a force-push
 # landing between event emission and the fetch) must not masquerade as
-# "Package.swift untouched".
-if ! head_files="$(git diff --name-only "origin/${BASE_REF}...${HEAD_SHA}")"; then
+# "Package.swift untouched". Path-limited --quiet produces no output,
+# so the check cannot false-negative on a huge changed-file list (a
+# 'grep -q' consumer would SIGPIPE the producer and, under pipefail,
+# invert the verdict).
+diff_rc=0
+git diff --quiet "origin/${BASE_REF}...${HEAD_SHA}" -- Package.swift || diff_rc=$?
+if [ "${diff_rc}" -gt 1 ]; then
   echo "::error::cannot diff the incoming pin against origin/${BASE_REF}"
   exit 1
 fi
-if ! printf '%s\n' "${head_files}" | grep -q '^Package.swift$'; then
+if [ "${diff_rc}" = "0" ]; then
   echo "Package.swift untouched; nothing to check"
   exit 0
 fi
