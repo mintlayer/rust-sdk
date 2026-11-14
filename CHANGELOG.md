@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Merge-time enforcement for SPM pins: a ci.yml "Pin ordering" gate checks every `Package.swift` edit — the pinned checksum must match the release's published `SHA256SUMS`, the pin must advance the release on the default branch, and reserved-namespace heads must pin exactly their declared release.
+- Merge-time enforcement for SPM pins: a ci.yml "Pin ordering" gate checks every pull request (and reserved-namespace push) that edits `Package.swift` — the pinned checksum must match the release's published `SHA256SUMS`, the pin must advance the release on the default branch, and reserved-namespace heads must pin exactly their declared release.
 
 - bindings: new `mintlayer-wallet-bindings` crate exposing the Mintlayer
   wallet primitives to Kotlin and Swift via UniFFI, mirroring the full

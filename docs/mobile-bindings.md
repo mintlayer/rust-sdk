@@ -174,7 +174,8 @@ release, and then opens a pull request that pins the SPM checksum in the
 root `Package.swift` to the released artifact. The release exists before
 the pin PR is opened; a maintainer merges that pin PR to activate SPM
 resolution for the release. The `ci.yml` "Pin ordering" gate applies
-to every pull request or push that edits `Package.swift`, whatever
+to every pull request and to every push of the reserved
+`pin-spm-checksum-*` branches that edits `Package.swift`, whatever
 the head branch is named: the pinned checksum must match the
 `SHA256SUMS` published for the release the pin names (an unverifiable
 pin would strand every SPM consumer on a resolution failure), and the

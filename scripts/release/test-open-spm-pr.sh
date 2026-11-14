@@ -543,11 +543,13 @@ assert_no_mutations
 # 34. Guard: mangled checksum (65+ hex) on origin -> fail closed.
 set_fixtures 0 1 "${FULLY_PINNED}" pr.none
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b9700"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
 ( cd "${STUBS}/repo" && \
   PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
   bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
     >/dev/null 2>&1 )
 rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "1" ]; then ok "guard refuses 65-hex checksum"; else bad "guard refuses 65-hex checksum" "exit ${rc}"; fi
 assert_no_mutations
 
