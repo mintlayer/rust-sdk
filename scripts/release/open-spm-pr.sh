@@ -148,7 +148,11 @@ origin_swift="$(git show "origin/${DEFAULT_BRANCH}:Package.swift" 2>/dev/null)" 
 # Only real code lines constitute the pin: block comments, line
 # comments, and their decoy literals are all ignored.
 origin_code="$(strip_swift_comments "${origin_swift}")"
-tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v' || true)"
+# Canonical count uses the same whole-line anchor as the merge gate,
+# so trailing garbage on the canonical line itself (e.g. a stray 'x'
+# after the closing quote) refuses here exactly like it refuses at
+# merge time.
+tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
 sum_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "' || true)"
 # Pin-bearing occurrence count, mirroring the merge gate: extras beside
 # the canonical assignment (broken prefix, releaseTagX variants) would

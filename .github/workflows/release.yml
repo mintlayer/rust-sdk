@@ -235,7 +235,7 @@ jobs:
           fi
           # Neutralize every '::' so no crafted Package.swift line can
           # forge workflow commands (leading or mid-line) in this log.
-          grep -E "releaseTag|checksum" Package.swift | sed 's/::/[::]/g'
+          grep -E "releaseTag|checksum" Package.swift | tr -d '\000-\037\177\200-\377' | sed 's/::/[::]/g'
           echo "XCSUM=$xcsum" >> "$GITHUB_ENV"
 
       - name: Create the GitHub release

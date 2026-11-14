@@ -109,7 +109,7 @@ if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
     fi
   fi
   if [ "$(cat "${CASE_DIR}/second_pr_list_empty" 2>/dev/null || echo 0)" = "1" ] \
-    && [ "$(wc -l < "${CASE_DIR}/pr_list_calls" 2>/dev/null || echo 1)" -ge 2 ]; then
+    && [ "$(cat "${CASE_DIR}/head_list_calls" 2>/dev/null || echo 0)" -ge 2 ]; then
     # Jq-processed empty: the pre-push PR merged, no open pin PRs left.
     printf ''
     exit 0
@@ -1184,6 +1184,23 @@ if [ "${rc}" = "1" ] && grep -q "pin-bearing line" <<< "$(cat "${OUT}")"; then
   ok "release refuses extra pin-bearing base lines"
 else
   bad "release refuses extra pin-bearing base lines" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 59f. Trailing garbage on the canonical line itself (stray suffix) ->
+# refuse at release time, mirroring the merge gate's whole-line anchor.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v1.2.3"x\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "canonical releaseTag assignments" <<< "$(cat "${OUT}")"; then
+  ok "release refuses trailing garbage on the canonical line"
+else
+  bad "release refuses trailing garbage on the canonical line" "exit ${rc}: $(cat "${OUT}")"
 fi
 assert_no_mutations
 
