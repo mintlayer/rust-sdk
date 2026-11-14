@@ -1,5 +1,10 @@
 name: CI
 
+# Workflow triggers cannot use expressions: these branch filters
+# hardcode "main" as the default branch. The gate and the release
+# scripts derive the default branch dynamically, but a default-branch
+# RENAME must also update these two filter lines or PR-side gating
+# silently stops running.
 on:
   push:
     branches: [main, 'pin-spm-checksum-**']

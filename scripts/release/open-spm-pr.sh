@@ -213,12 +213,17 @@ elif [ -n "${origin_pin_tag}" ]; then
 fi
 git commit -m "chore: pin the SPM checksum to ${TAG}"
 
+# Preflight canary: fail fast when the PR-state lookups are broken
+# before anything is mutated. The value itself is discarded (hence the
+# deliberate shellcheck disable below) — the reuse-vs-create decision
+# is made by the post-push re-lookup.
 # Only an OPEN pull request against the default branch from this
 # repository's own branch counts. Fork PRs, same-owner cross-repo PRs,
 # and PRs targeting a non-default base must not suppress the genuine bot
 # PR. The owner name is validated before it is interpolated into the jq
 # program; --paginate keeps the check independent of list windows.
-existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
+# shellcheck disable=SC2034  # canary: value intentionally discarded
+preflight_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
   --json number,headRepositoryOwner,isCrossRepository,baseRefName \
   --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")" \
   || { echo "::error::failed to list existing pin PRs"; exit 1; }
@@ -227,7 +232,10 @@ existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
 # NEWER release's pin PR is still open (merging it after this one would
 # rewind the pin; the concurrency group serializes runs, not queue
 # order). Runs on both the create and reuse paths. Close failures fail
-# the run - a stale open pin PR is a rewind hazard.
+# the run - a stale open pin PR is a rewind hazard. Operator note:
+# closes happen BEFORE the push, so a push failure leaves a transient
+# zero-open-pin-PR window; the direction is safe (main stays pinned to
+# the older release) and the next run is idempotent.
 superseded=""
 # Same trust filters as the existing_pr lookup: fork PRs, same-owner
 # cross-repo PRs, and PRs against a non-default base never constrain

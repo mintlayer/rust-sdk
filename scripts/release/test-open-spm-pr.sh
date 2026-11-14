@@ -97,6 +97,17 @@ if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
   # Post-push re-lookup simulation: the second list returns empty when
   # the knob is set (the pre-push PR merged in flight).
   printf 'x\n' >> "${CASE_DIR}/pr_list_calls" 2>/dev/null || true
+  # relookup_fails: fail ONLY the post-push re-lookup (the second
+  # --head list), leaving the pre-flight canary green.
+  if [ "$3" = "--head" ] || [ "$4" = "--head" ]; then
+    n_heads="$(cat "${CASE_DIR}/head_list_calls" 2>/dev/null || echo 0)"
+    n_heads=$((n_heads + 1))
+    printf '%s' "${n_heads}" > "${CASE_DIR}/head_list_calls"
+    if [ "$(cat "${CASE_DIR}/relookup_fails" 2>/dev/null || echo 0)" = "1" ] && [ "${n_heads}" -ge 2 ]; then
+      echo "gh: re-lookup failed" >&2
+      exit 1
+    fi
+  fi
   if [ "$(cat "${CASE_DIR}/second_pr_list_empty" 2>/dev/null || echo 0)" = "1" ] \
     && [ "$(wc -l < "${CASE_DIR}/pr_list_calls" 2>/dev/null || echo 1)" -ge 2 ]; then
     # Jq-processed empty: the pre-push PR merged, no open pin PRs left.
@@ -1231,6 +1242,26 @@ if [ "${rc}" = "0" ] && grep -q "gh pr create" "${LOG}" && ! grep -q "updated it
   ok "post-push empty re-lookup falls through to create"
 else
   bad "post-push empty re-lookup falls through to create" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# 73. A failing post-push re-lookup fails the run (the pre-flight
+# canary stays green; the branch was already pushed).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf '1' > "${TMP}/relookup_fails"
+rm -f "${TMP}/head_list_calls"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+printf '0' > "${TMP}/relookup_fails"
+rm -f "${TMP}/head_list_calls"
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "re-list existing pin PRs after the push" <<< "$(cat "${OUT}")"; then
+  ok "post-push re-lookup failure fails closed"
+else
+  bad "post-push re-lookup failure fails closed" "exit ${rc}: $(cat "${OUT}")"
 fi
 
 # 73. Supersede: plain newer stale marker (9.9.9, cmp_old = -1) ->
