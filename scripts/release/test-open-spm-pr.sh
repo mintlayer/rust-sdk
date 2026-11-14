@@ -734,6 +734,25 @@ if [ "${rc}" = "1" ]; then ok "pin order fails closed on an unreadable incoming 
 # Ordering-only mode (empty EXPECTED_TAG): non-namespace Package.swift
 # edits are order-checked without a tag-equality requirement. The
 # caller (ci.yml) binds the checksum to the published release.
+
+# 45f-2. Base branch with no pin at all -> early-accept.
+printf 'checksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "" >/dev/null 2>&1 )
+rc=$?
+if [ "${rc}" = "0" ]; then ok "pin order accepts any pin over an unpinned base"; else bad "pin order accepts any pin over an unpinned base" "exit ${rc}"; fi
+
+# 45f-3. A prefix-matching but malformed base pin line (stray suffix) ->
+# refuse: the base is not "unpinned".
+printf 'let releaseTag = "wallet-bindings-v1.0.0"x\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "" > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ] && grep -q "mangled pin line" <<< "$(cat "${OUT}")"; then ok "pin order refuses a prefix-mangled base pin"; else bad "pin order refuses a prefix-mangled base pin" "exit ${rc}: $(cat "${OUT}")"; fi
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
 ( cd "${STUBS}/repo" && \
@@ -786,6 +805,16 @@ run_gate() {
     bash "${GATE}" > "${OUT}" 2>&1 )
   rc=$?
 }
+# Push-event variant: no PR-head fetch branch; the pushed SHA is
+# already local.
+run_gate_push() {
+  ( cd "${STUBS}/repo" && \
+    PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+    BASE_REF="main" HEAD_SHA="0123456789abcdef0123456789abcdef01234567" \
+    HEAD_REF="$1" EVENT_NAME="push" PR_NUMBER="" \
+    bash "${GATE}" > "${OUT}" 2>&1 )
+  rc=$?
+}
 run_gate "feature"
 if [ "${rc}" = "0" ] && grep -q "untouched" "${OUT}"; then
   ok "gate skips a PR that does not touch Package.swift"
@@ -827,6 +856,21 @@ if [ "${rc}" = "1" ] && grep -q "exactly one releaseTag" "${OUT}"; then
 else
   bad "gate refuses a mangled head" "exit ${rc}: $(cat "${OUT}")"
 fi
+
+# Push event: same binding and ordering without the PR-head fetch.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+printf '1' > "${TMP}/head_touched"
+run_gate_push "feature"
+if [ "${rc}" = "0" ]; then ok "gate push event allows a bound forward pin"; else bad "gate push event allows a bound forward pin" "exit ${rc}: $(cat "${OUT}")"; fi
+
+printf '0' > "${TMP}/head_touched"
+run_gate_push "feature"
+if [ "${rc}" = "0" ] && grep -q "untouched" "${OUT}"; then
+  ok "gate push event skips an untouched Package.swift"
+else
+  bad "gate push event skips an untouched Package.swift" "exit ${rc}: $(cat "${OUT}")"
+fi
+printf '1' > "${TMP}/head_touched"
 
 # Reserved namespace: strict tag equality against the branch name.
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
@@ -984,6 +1028,31 @@ set_fixtures 0 1 'let releaseTag = "wallet-bindings-v0.1.0"
 rc=$?
 LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "0" ]; then ok "guard allows deactivated older pin"; else bad "guard allows deactivated older pin" "exit ${rc}"; fi
+
+# 58b. Guard: unparseable origin pin tag (no version) -> fail closed.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "unparseable pin tag" <<< "$(cat "${OUT}")"; then ok "guard refuses an unparseable origin pin tag"; else bad "guard refuses an unparseable origin pin tag" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
+
+# 58c. Guard: an all-comments origin carries no code lines -> fail
+# closed.
+printf '// nothing but comments here\n/* still comments */\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${SCRIPT_DIR}/guard-release-refresh.sh" wallet-bindings-v1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "carries no code lines" <<< "$(cat "${OUT}")"; then ok "guard refuses a comment-only origin"; else bad "guard refuses a comment-only origin" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
 
 # 59b. Deactivated pin (zeroed checksum) whose marker is newer-or-equal
 # -> refuse with the out-of-band comparator validation.
