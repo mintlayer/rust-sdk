@@ -80,7 +80,15 @@ jobs:
 
       - name: Stage AAR with versioned name
         run: |
+          # Same strict tag shape the release job enforces later: a
+          # slash-bearing or malformed tag would stage the AAR outside
+          # the dist glob and fail the run confusingly. Fail here
+          # instead.
           VERSION="${GITHUB_REF_NAME#wallet-bindings-v}"
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag does not match wallet-bindings-v<semver>: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
           mkdir -p dist
           cp bindings/kotlin/build/outputs/aar/*-release.aar \
             "dist/mintlayer-wallet-bindings-${VERSION}.aar"
@@ -240,7 +248,8 @@ jobs:
             `org.mintlayer.wallet.bindings`
           - `MintlayerWalletBindings.xcframework.zip` — iOS framework
             (arm64 device, arm64 simulator); consumed by the root
-            `Package.swift` (checksum pinned to this release)
+            `Package.swift` (checksum pinned to this release once its
+            checksum-pin pull request merges)
           - `SHA256SUMS` — SHA-256 checksums for every artifact
           - `MintlayerWalletBindings.swift` — generated Swift wrapper
             (also in-repo at `SwiftSources/`)

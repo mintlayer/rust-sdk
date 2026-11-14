@@ -3,10 +3,8 @@ name: CI
 on:
   push:
     branches: [main, 'pin-spm-checksum-**']
-    paths-ignore: [".github/**"]
   pull_request:
     branches: [main]
-    paths-ignore: [".github/**"]
 
 # The crate jobs never need more than read access.
 permissions:

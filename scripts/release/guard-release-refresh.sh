@@ -52,7 +52,10 @@ if [ -z "${origin_code}" ]; then
 fi
 
 # Exactly one releaseTag and one checksum assignment must exist (any
-# version); anything else is a mangled pin state -> fail closed.
+# version); counts are shape-agnostic here — a hex-invalid checksum on
+# a DIFFERENT tag still refreshes (main is already broken for its own
+# pin; the strict hex checks live in open-spm-pr.sh and the ci.yml
+# gate), same-tag refreshes with a mangled checksum fail below.
 tag_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^let releaseTag = "wallet-bindings-v' || true)"
 checksum_assignments="$(printf '%s\n' "${origin_code}" | grep -cE '^checksum: "' || true)"
 if [ "${tag_assignments}" != "1" ] || [ "${checksum_assignments}" != "1" ]; then

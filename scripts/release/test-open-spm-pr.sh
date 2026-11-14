@@ -837,6 +837,26 @@ if [ "${rc}" = "1" ] && grep -q "does not carry exactly the expected pin assignm
 else
   bad "gate strict mode refuses a tag mismatch" "exit ${rc}: $(cat "${OUT}")"
 fi
+
+# A reserved-namespace branch whose suffix is not a semver -> refuse
+# at the derivation check.
+run_gate "pin-spm-checksum-oops"
+if [ "${rc}" = "1" ] && grep -q "does not match wallet-bindings-v<semver>" "${OUT}"; then
+  ok "gate refuses an unparseable namespace branch name"
+else
+  bad "gate refuses an unparseable namespace branch name" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# An unreadable head commit -> fail closed at the gate itself.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+printf '1' > "${TMP}/incoming_show_fails"
+run_gate "feature"
+printf '0' > "${TMP}/incoming_show_fails"
+if [ "${rc}" = "1" ] && grep -q "cannot read Package.swift from the PR head" "${OUT}"; then
+  ok "gate fails closed on an unreadable head"
+else
+  bad "gate fails closed on an unreadable head" "exit ${rc}: $(cat "${OUT}")"
+fi
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
 printf 'let releaseTag = "wallet-bindings-v0.0.0" // placeholder\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
 
@@ -998,8 +1018,10 @@ else
 fi
 
 # Static check: the TAG regex must be byte-identical in every copy
-# (three occurrences in release.yml, one in open-spm-pr.sh, one in
-# guard-release-refresh.sh).
+# Byte-identical TAG regex everywhere it appears: four occurrences in
+# release.yml, one in open-spm-pr.sh, two in guard-release-refresh.sh,
+# two in pin-order-gate.sh, one in check-pin-order.sh, and an explicit
+# zero expectation for ci.yml (the gate moved into the tested script).
 TAG_REGEX='^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$'
 wf="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/release.yml" || true)"
 sc="$(grep -cF -- "${TAG_REGEX}" "${UNDER_TEST}" || true)"
@@ -1007,10 +1029,10 @@ gd="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/guard-release-refresh.sh" || tru
 cy="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/../../.github/workflows/ci.yml" || true)"
 gate="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/pin-order-gate.sh" || true)"
 cpo="$(grep -cF -- "${TAG_REGEX}" "${SCRIPT_DIR}/check-pin-order.sh" || true)"
-if [ "${wf}" = "3" ] && [ "${sc}" = "1" ] && [ "${gd}" = "2" ] && [ "${cy}" = "0" ] && [ "${gate}" = "2" ] && [ "${cpo}" = "1" ]; then
-  ok "tag regex identical across all nine copies"
+if [ "${wf}" = "4" ] && [ "${sc}" = "1" ] && [ "${gd}" = "2" ] && [ "${cy}" = "0" ] && [ "${gate}" = "2" ] && [ "${cpo}" = "1" ]; then
+  ok "tag regex identical across all ten copies"
 else
-  bad "tag regex identical across all nine copies" "release.yml=${wf}, script=${sc}, guard=${gd}, ci=${cy}, gate=${gate}, pin-order=${cpo}"
+  bad "tag regex identical across all ten copies" "release.yml=${wf}, script=${sc}, guard=${gd}, ci=${cy}, gate=${gate}, pin-order=${cpo}"
 fi
 
 echo "passed: ${pass}, failed: ${fail}"

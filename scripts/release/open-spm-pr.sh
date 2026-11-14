@@ -187,6 +187,10 @@ if [ "${origin_pin_active}" = "1" ]; then
     echo "::error::origin/${DEFAULT_BRANCH} already pins $(esc "${origin_pin_tag}") (>= ${VERSION}); refusing to rewind the pin"
     exit 1
   fi
+elif [ -n "${origin_pin_sum_raw}" ] && [ -z "${origin_pin_sum}" ]; then
+  # A checksum line exists but is not 64 lowercase hex: mangled pin.
+  echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${origin_pin_sum_raw}")"
+  exit 1
 elif { cmp="$(semver_cmp "${VERSION}" "${origin_version}")"; [[ "${cmp}" =~ ^-?[012]$ ]]; } && [ "${cmp}" -le 0 ]; then
   # A deactivated (zeroed-checksum) pin whose release marker is
   # newer-or-equal: main claims ${origin_version} with no active
@@ -194,10 +198,6 @@ elif { cmp="$(semver_cmp "${VERSION}" "${origin_version}")"; [[ "${cmp}" =~ ^-?[
   # checksum in conflict; manual repair required. semver_cmp keeps this
   # aligned with the active-pin path at prerelease/build edges.
   echo "::error::origin/${DEFAULT_BRANCH} carries a deactivated pin for ${origin_version} (>= ${VERSION}); refusing to pin - repair the default branch manually"
-  exit 1
-elif [ -n "${origin_pin_sum_raw}" ] && [ -z "${origin_pin_sum}" ]; then
-  # A checksum line exists but is not 64 lowercase hex: mangled pin.
-  echo "::error::origin/${DEFAULT_BRANCH} carries a mangled checksum line: $(esc "${origin_pin_sum_raw}")"
   exit 1
 elif [ -z "${origin_pin_sum_raw}" ] && [ -n "${origin_pin_tag}" ]; then
   # A tag line without any checksum line: mangled pin.
