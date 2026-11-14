@@ -86,7 +86,10 @@ jobs:
           # instead.
           VERSION="${GITHUB_REF_NAME#wallet-bindings-v}"
           if [[ ! "${GITHUB_REF_NAME}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::tag does not match wallet-bindings-v<semver>: ${GITHUB_REF_NAME}"
+            # %-escape and strip control bytes so a crafted tag name
+            # cannot spoof annotation content.
+            safe_tag="$(printf '%s' "${GITHUB_REF_NAME}" | tr -d '\000-\037\177' | sed 's/%/%25/g')"
+            echo "::error::tag does not match wallet-bindings-v<semver>: ${safe_tag}"
             exit 1
           fi
           mkdir -p dist

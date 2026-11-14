@@ -39,12 +39,9 @@ ok() { pass=$((pass + 1)); echo "ok - $1"; }
 # forgery, control characters, DEL, and non-ASCII bytes before echoing.
 sanitize() {
   # PR-controlled output: replace every '::' so no workflow command can
-  # survive, per line. LF/CR are intentionally preserved — deleting them
-  # could splice two benign fragments into a new command — and each
-  # resulting line is safe because '::' no longer occurs in it.
-  # DEL and non-ASCII bytes are deleted outright (esc() in pinlib.sh
-  # does the same); LF/CR are preserved — deleting them could splice
-  # two benign fragments into a new command.
+  # survive, per line. DEL and non-ASCII bytes are deleted outright
+  # (esc() in pinlib.sh does the same); LF/CR are preserved — deleting
+  # them could splice two benign fragments into a new command.
   printf '%s' "$1" | tr -d '\000-\010\011\013\014\016-\037\177\200-\377' | sed 's/::/[::]/g'
 }
 bad() { fail=$((fail + 1)); echo "NOT OK - $1: $(sanitize "$2")"; }
@@ -988,6 +985,40 @@ rc=$?
 LOG_CONTENTS="$(cat "${LOG}")"
 if [ "${rc}" = "0" ]; then ok "guard allows deactivated older pin"; else bad "guard allows deactivated older pin" "exit ${rc}"; fi
 
+# 59b. Deactivated pin (zeroed checksum) whose marker is newer-or-equal
+# -> refuse with the out-of-band comparator validation.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v9.9.9"\nchecksum: "0000000000000000000000000000000000000000000000000000000000000000"\n' > "${TMP}/origin_swift"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "carries a deactivated pin" <<< "$(cat "${OUT}")"; then
+  ok "deactivated newer-or-equal marker refused"
+else
+  bad "deactivated newer-or-equal marker refused" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 59c. A releaseTag line without any checksum line -> refuse as
+# mangled.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'let releaseTag = "wallet-bindings-v9.9.9"\n' > "${TMP}/origin_swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+# The upstream counts guard refuses this shape first (1 tag, 0
+# checksums); the inner tag-without-checksum branch below it is
+# unreachable for this fixture and stays as defense in depth.
+if [ "${rc}" = "1" ] && grep -q "0 checksum assignments" <<< "$(cat "${OUT}")"; then ok "tag-without-checksum origin refused"; else bad "tag-without-checksum origin refused" "exit ${rc}: $(cat "${OUT}")"; fi
+assert_no_mutations
+
 # 60. Supersede: build-metadata suffix on the open pin branch compares
 # EQUAL (metadata excluded from precedence) -> refuse like any >=
 # marker.
@@ -1024,7 +1055,7 @@ fi
 assert_no_mutations
 printf 'placeholder\n' > "${STUBS}/repo/Package.swift"
 
-# 61. semver.sh unit checks (sourced directly).
+# 62. semver.sh unit checks (sourced directly).
 # shellcheck source=/dev/null
 semver_tests="${SCRIPT_DIR}/semver.sh"
 semver_cmp_check() {

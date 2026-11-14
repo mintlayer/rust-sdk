@@ -3,7 +3,9 @@
 #
 # Applicability is diff-driven: every pull request or push whose diff
 # touches Package.swift is checked; anything else exits 0 ("nothing to
-# check") without touching the network. For an applicable diff:
+# check"). On pull_request events the PR-head fetch below necessarily
+# precedes the diff, so "no network beyond that fetch" is the accurate
+# claim for skipped diffs. For an applicable diff:
 #   1. The head's single releaseTag + hex checksum pin is extracted
 #      with the shared stripper (pinlib.sh).
 #   2. The checksum is bound to the release the pin names: the

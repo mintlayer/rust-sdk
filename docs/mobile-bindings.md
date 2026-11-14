@@ -191,8 +191,9 @@ bot pin PRs opened with the workflow token emit no pull_request CI
 events, so namespace protection plus the creation-time rewind guard
 are the controls for them. A pre-automation legacy branch
 (`pin-spm-checksum-v0.1.0`) can be deleted once this flow merges;
-both the gate and the supersede loop tolerate its `v` suffix. Consumers never need a
-Rust toolchain.
+both the gate and the supersede loop tolerate its `v` suffix.
+
+Consumers never need a Rust toolchain.
 The major/minor/patch policy: bump the major version for FFI surface
 breaks, minor for additive exports, patch for fixes; entries are recorded
 in the repository `CHANGELOG.md`.
