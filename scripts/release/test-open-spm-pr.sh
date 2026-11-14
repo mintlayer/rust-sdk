@@ -36,13 +36,16 @@ fail=0
 ok() { pass=$((pass + 1)); echo "ok - $1"; }
 # Sanitize log output: the script under test and stub args are
 # PR-controlled on pull_request runs, so neutralize workflow-command
-# forgery and control characters before echoing.
+# forgery, control characters, DEL, and non-ASCII bytes before echoing.
 sanitize() {
   # PR-controlled output: replace every '::' so no workflow command can
   # survive, per line. LF/CR are intentionally preserved — deleting them
   # could splice two benign fragments into a new command — and each
   # resulting line is safe because '::' no longer occurs in it.
-  printf '%s' "$1" | tr -d '\000-\010\011\013\014\016-\037' | sed 's/::/[::]/g'
+  # DEL and non-ASCII bytes are deleted outright (esc() in pinlib.sh
+  # does the same); LF/CR are preserved — deleting them could splice
+  # two benign fragments into a new command.
+  printf '%s' "$1" | tr -d '\000-\010\011\013\014\016-\037\177\200-\377' | sed 's/::/[::]/g'
 }
 bad() { fail=$((fail + 1)); echo "NOT OK - $1: $(sanitize "$2")"; }
 
@@ -146,6 +149,7 @@ echo '[{"number": 9, "headRefName": "pin-spm-checksum-1.2.3", "headRepositoryOwn
 echo '[{"number": 9, "headRefName": "pin-spm-checksum-1.2.3", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "develop"}]' > "${TMP}/pr.wrongbase"
 echo '[{"number": 5, "headRefName": "pin-spm-checksum-0.0.9", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_older"
 echo '[{"number": 6, "headRefName": "pin-spm-checksum-9.9.9", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_newer"
+echo '[{"number": 12, "headRefName": "pin-spm-checksum-1.2.3+meta", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_meta"
 
 # set_fixtures <ancestry> <staged_diff> <package_swift> <existing_pr> [default_diff]
 # default_diff: 0 = Package.swift identical to the default branch (pin merged).

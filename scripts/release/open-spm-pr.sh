@@ -233,6 +233,9 @@ while IFS=$'\t' read -r old_pr old_branch; do
   [ -n "${old_pr}" ] || continue
   [ "${old_branch}" = "${BRANCH}" ] && continue
   old_version="${old_branch#pin-spm-checksum-}"
+  # A pre-automation branch carried a bare v (pin-spm-checksum-v0.1.0);
+  # tolerate the suffix so a stale legacy PR cannot hard-block releases.
+  old_version="${old_version#v}"
   # Defensive: the jq filter already excludes BRANCH itself, so a
   # same-version row should be unreachable; skip rather than mis-handle.
   if [ "${old_version}" = "${VERSION}" ]; then continue; fi

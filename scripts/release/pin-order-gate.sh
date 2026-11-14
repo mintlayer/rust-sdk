@@ -41,7 +41,8 @@ fi
 # events already have their SHA locally). Anonymous on public repos;
 # private repositories fail closed below rather than skipping.
 if [ "${EVENT_NAME}" = "pull_request" ]; then
-  git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head"
+  git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head" \
+    || { echo "::error::cannot fetch the PR head"; exit 1; }
 fi
 
 # Fail closed on diff errors: an unreadable head (e.g. a force-push
@@ -60,7 +61,10 @@ fi
 # heads are order-checked without a tag-equality requirement.
 case "${HEAD_REF}" in
   pin-spm-checksum-*)
-    expected_tag="wallet-bindings-v${HEAD_REF#pin-spm-checksum-}"
+    # A pre-automation branch carried a bare v in the suffix; strip it
+    # so legacy branches still derive the correct expected tag.
+    gate_suffix="${HEAD_REF#pin-spm-checksum-}"
+    expected_tag="wallet-bindings-v${gate_suffix#v}"
     if [[ ! "${expected_tag}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
       echo "::error::derived tag does not match wallet-bindings-v<semver>: $(esc "${expected_tag}")"
       exit 1

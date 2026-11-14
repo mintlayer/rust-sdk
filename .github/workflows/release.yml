@@ -280,9 +280,11 @@ jobs:
               dist/swift-sources/MintlayerWalletBindings.swift
           else
             # Pre-release versions must not claim the GitHub "Latest"
-            # badge; only final releases do.
+            # badge; only final releases do. Build metadata (+) does
+            # not affect semver finality, so only the pre-release
+            # hyphen disqualifies.
             latest_flag="--latest"
-            case "$VERSION" in *-*|*+*) latest_flag="--latest=false" ;; esac
+            case "$VERSION" in *-*) latest_flag="--latest=false" ;; esac
             gh release create "$TAG" \
               dist/mintlayer-wallet-bindings-*.aar \
               dist/MintlayerWalletBindings.xcframework.zip \
