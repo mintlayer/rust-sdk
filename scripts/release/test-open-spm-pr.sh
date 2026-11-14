@@ -147,6 +147,7 @@ echo '[{"number": 9, "headRefName": "pin-spm-checksum-1.2.3", "headRepositoryOwn
 echo '[{"number": 5, "headRefName": "pin-spm-checksum-0.0.9", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_older"
 echo '[{"number": 6, "headRefName": "pin-spm-checksum-9.9.9", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_newer"
 echo '[{"number": 12, "headRefName": "pin-spm-checksum-1.2.3+meta", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_meta"
+echo '[{"number": 13, "headRefName": "pin-spm-checksum-v0.1.1", "headRepositoryOwner": {"login": "mintlayer"}, "isCrossRepository": false, "baseRefName": "main"}]' > "${TMP}/pr.stale_legacy"
 
 # set_fixtures <ancestry> <staged_diff> <package_swift> <existing_pr> [default_diff]
 # default_diff: 0 = Package.swift identical to the default branch (pin merged).
@@ -754,6 +755,28 @@ printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" 
 rc=$?
 if [ "${rc}" = "1" ] && grep -q "mangled pin line" <<< "$(cat "${OUT}")"; then ok "pin order refuses a prefix-mangled base pin"; else bad "pin order refuses a prefix-mangled base pin" "exit ${rc}: $(cat "${OUT}")"; fi
 
+# Mixed state: one canonical assignment plus an extra pin-bearing line
+# that is not anchored (releaseTagX) -> refuse (extras beyond the
+# canonical assignment are mangled state, even with a well-formed pin
+# present).
+printf 'let releaseTag = "wallet-bindings-v1.0.0"\nlet releaseTagX = "wallet-bindings-v0.1.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "" > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ] && grep -q "pin-bearing occurrence" <<< "$(cat "${OUT}")"; then ok "pin order refuses extra pin-bearing lines beside the canonical one"; else bad "pin order refuses extra pin-bearing lines beside the canonical one" "exit ${rc}: $(cat "${OUT}")"; fi
+
+# Comment-only base -> refuse (mirrors the guard; an unpinned verdict
+# here would make any pin mergeable over a corrupted base).
+printf '// nothing but comments\n' > "${TMP}/origin_swift"
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${STUBS}/repo/Package.swift"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+  bash "${ORDER}" main "" > "${OUT}" 2>&1 )
+rc=$?
+if [ "${rc}" = "1" ] && grep -q "carries no code lines" <<< "$(cat "${OUT}")"; then ok "pin order refuses a comment-only base"; else bad "pin order refuses a comment-only base" "exit ${rc}: $(cat "${OUT}")"; fi
+
 # Broken-prefix variant: a double space before '=' breaks the anchored
 # prefix itself — detection must not be prefix-anchored.
 printf 'let releaseTag  = "wallet-bindings-v1.0.0"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
@@ -894,6 +917,12 @@ if [ "${rc}" = "1" ] && grep -q "does not carry exactly the expected pin assignm
 else
   bad "gate strict mode refuses a tag mismatch" "exit ${rc}: $(cat "${OUT}")"
 fi
+
+# Legacy v-suffix branch names (pre-automation) derive the correct
+# expected tag: pin-spm-checksum-v1.3.0 -> wallet-bindings-v1.3.0.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+run_gate "pin-spm-checksum-v1.3.0"
+if [ "${rc}" = "0" ]; then ok "gate tolerates a legacy v-suffix branch name"; else bad "gate tolerates a legacy v-suffix branch name" "exit ${rc}: $(cat "${OUT}")"; fi
 
 # A reserved-namespace branch whose suffix is not a semver -> refuse
 # at the derivation check.
@@ -1115,6 +1144,22 @@ else
   bad "supersede refuses meta-suffix stale pin" "exit ${rc}: $(cat "${OUT}")"
 fi
 assert_no_mutations
+
+# 60b. Supersede: a legacy v-suffix stale branch (pin-spm-checksum-
+# v0.1.1 -> version 0.1.1 < 1.2.3) is closed like any older pin.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.stale_legacy
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "0" ] && grep -q -- "pr close 13" "${LOG}"; then
+  ok "supersede closes a legacy v-suffix stale pin PR"
+else
+  bad "supersede closes a legacy v-suffix stale pin PR" "exit ${rc}: $(cat "${OUT}")"
+fi
 
 # 61. Supersede: plain newer stale marker (9.9.9, cmp_old = -1) ->
 # refuse.

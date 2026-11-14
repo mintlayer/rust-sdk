@@ -44,10 +44,11 @@ fi
 # The incoming pin comes from the PR head SHA (workflow) or the working
 # tree (legacy/harness) — always consumed as data by this trusted code.
 if [ -n "${INCOMING_REF}" ]; then
-  normalized_in="$(strip_swift_comments "$(git show "${INCOMING_REF}:Package.swift" 2>/dev/null)")" || {
-    echo "::error::cannot read Package.swift from $(esc "${INCOMING_REF}")"
-    exit 1
-  }
+  # Capture the show first: strip_swift_comments always exits 0, so
+  # piping straight into it would mask a failed read.
+  incoming_swift="$(git show "${INCOMING_REF}:Package.swift" 2>/dev/null)" \
+    || { echo "::error::cannot read Package.swift from $(esc "${INCOMING_REF}")"; exit 1; }
+  normalized_in="$(strip_swift_comments "${incoming_swift}")"
 else
   if [ ! -r Package.swift ]; then
     echo "::error::cannot read Package.swift"
@@ -101,11 +102,15 @@ git fetch origin "+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
 origin_swift="$(git show "origin/${BASE_BRANCH}:Package.swift" 2>/dev/null)" \
   || { echo "::error::cannot read origin/${BASE_BRANCH}:Package.swift"; exit 1; }
 origin_code="$(strip_swift_comments "${origin_swift}")"
-# Mangle detection is not prefix-anchored: ANY releaseTag-bearing code
-# line on the base that is not the canonical assignment (broken prefix,
-# stray suffix, doubled spaces) must refuse — otherwise a corrupted
-# base would read as "no pin" and let a rewind pass.
-current_bearing="$(printf '%s\n' "${origin_code}" | grep -c 'releaseTag' || true)"
+if [ -z "${origin_code}" ]; then
+  echo "::error::origin/${BASE_BRANCH}:Package.swift carries no code lines; refusing (repair manually)"
+  exit 1
+fi
+# Mangle detection is not prefix-anchored: the base must carry exactly
+# one canonical assignment and nothing else pin-shaped. 'let
+# releaseTag' occurrence counting works here because the download-URL
+# line loses its \(releaseTag) interpolation to comment stripping.
+current_bearing="$(printf '%s\n' "${origin_code}" | { grep -o 'let releaseTag' || true; } | wc -l | tr -d ' ')"
 current_matches="$(printf '%s\n' "${origin_code}" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"
 if [ "${current_matches}" = "0" ]; then
@@ -116,8 +121,8 @@ if [ "${current_matches}" = "0" ]; then
   echo "no pin on ${BASE_BRANCH}; any pin order is acceptable"
   exit 0
 fi
-if [ "${current_matches}" != "1" ]; then
-  echo "::error::expected at most one releaseTag assignment on ${BASE_BRANCH}, found ${current_matches}"
+if [ "${current_matches}" != "1" ] || [ "${current_bearing}" != "${current_matches}" ]; then
+  echo "::error::expected exactly one canonical releaseTag assignment on ${BASE_BRANCH}, found ${current_matches} canonical and ${current_bearing} pin-bearing occurrence(s); refusing (repair manually)"
   exit 1
 fi
 current_tag="$(printf '%s\n' "${origin_code}" \
