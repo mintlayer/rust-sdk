@@ -1177,9 +1177,8 @@ printf 'let releaseTag = "wallet-bindings-v9.9.9"\n' > "${TMP}/origin_swift"
     > "${OUT}" 2>&1 )
 rc=$?
 LOG_CONTENTS="$(cat "${LOG}")"
-# The upstream counts guard refuses this shape first (1 tag, 0
-# checksums); the inner tag-without-checksum branch below it is
-# unreachable for this fixture and stays as defense in depth.
+# The triaged counts guard refuses this shape and names it: one tag
+# line, zero checksum lines.
 # The triaged counts guard now names the missing-checksum-line shape.
 if [ "${rc}" = "1" ] && grep -q "without a checksum line" <<< "$(cat "${OUT}")"; then ok "tag-without-checksum origin refused"; else bad "tag-without-checksum origin refused" "exit ${rc}: $(cat "${OUT}")"; fi
 assert_no_mutations

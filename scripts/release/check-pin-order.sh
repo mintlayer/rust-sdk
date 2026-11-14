@@ -31,11 +31,7 @@ source "${BASH_SOURCE[0]%/*}/semver.sh"
 BASE_BRANCH="${1:?base branch required}"
 EXPECTED_TAG="${2-}"
 INCOMING_REF="${3:-}"
-if [[ ! "${BASE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
-  || [[ "${BASE_BRANCH}" == pin-spm-checksum-* ]]; then
-  echo "::error::unexpected base branch: $(esc "${BASE_BRANCH}")"
-  exit 1
-fi
+validate_branch_input "${BASE_BRANCH}" "base branch"
 if [ -n "${EXPECTED_TAG}" ] && [[ ! "${EXPECTED_TAG}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
   echo "::error::unexpected expected tag: $(esc "${EXPECTED_TAG}")"
   exit 1

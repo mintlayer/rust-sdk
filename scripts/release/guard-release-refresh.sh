@@ -28,11 +28,7 @@ if [[ ! "${XCSUM}" =~ ^[0-9a-f]{64}$ ]] || [ "${XCSUM//0/}" = "" ]; then
   echo "::error::checksum is not 64 lowercase hex characters (all-zero refused)"
   exit 1
 fi
-if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
-  || [[ "${DEFAULT_BRANCH}" == pin-spm-checksum-* ]]; then
-  echo "::error::unexpected default branch: $(esc "${DEFAULT_BRANCH}")"
-  exit 1
-fi
+validate_branch_input "${DEFAULT_BRANCH}" "default branch"
 
 # Refresh origin/<default> so the pin state reflects main as of now,
 # not the checkout snapshot: a pin PR merged while this release run is

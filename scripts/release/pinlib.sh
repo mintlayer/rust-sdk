@@ -41,3 +41,18 @@ count_pin_lines() { # <file> <tag> <checksum>
         '{ if ($0 == t) a++; if ($0 == s) b++; if ($0 ~ /^checksum: "/) c++ } \
           END { printf "%d %d %d\n", a+0, b+0, c+0 }'
 }
+
+# Validate a branch-name input (charset regex plus refusal of the
+# reserved pin-spm-checksum-* namespace). One canonical diagnostic for
+# every release script; exits 1 so callers need no error handling.
+validate_branch_input() { # <value> <role>
+  local value="$1" role="$2"
+  if [[ ! "${value}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+    echo "::error::unexpected ${role} format: $(esc "${value}")"
+    exit 1
+  fi
+  if [[ "${value}" == pin-spm-checksum-* ]]; then
+    echo "::error::the ${role} must not use the reserved pin-spm-checksum-* namespace: $(esc "${value}")"
+    exit 1
+  fi
+}

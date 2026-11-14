@@ -50,10 +50,7 @@ if [[ ! "${XCSUM}" =~ ^[0-9a-f]{64}$ ]] || [ "${XCSUM//0/}" = "" ]; then
   echo "::error::checksum is not 64 lowercase hex characters (all-zero refused)"
   exit 1
 fi
-if [[ ! "${DEFAULT_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
-  echo "::error::unexpected default branch format: $(esc "${DEFAULT_BRANCH}")"
-  exit 1
-fi
+validate_branch_input "${DEFAULT_BRANCH}" "default branch"
 # The default branch must never live in the reserved bot namespace: a
 # force-push there would rewind main instead of a disposable branch.
 if [[ "${DEFAULT_BRANCH}" == pin-spm-checksum-* ]]; then

@@ -32,11 +32,7 @@ HEAD_REF="${HEAD_REF:?head ref required}"
 EVENT_NAME="${EVENT_NAME:-}"
 PR_NUMBER="${PR_NUMBER:-}"
 
-if [[ ! "${BASE_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
-  || [[ "${BASE_REF}" == pin-spm-checksum-* ]]; then
-  echo "::error::unexpected base branch: $(esc "${BASE_REF}")"
-  exit 1
-fi
+validate_branch_input "${BASE_REF}" "base branch"
 
 # The checkout is the base branch; pull the PR head commit so the diff
 # and the data-only read of the head's Package.swift can see it (push
