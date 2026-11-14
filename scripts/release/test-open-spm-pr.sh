@@ -1197,7 +1197,6 @@ else
   bad "semver comparator unit checks" "unexpected comparator output"
 fi
 
-# Static check: the TAG regex must be byte-identical in every copy
 # Byte-identical TAG regex everywhere it appears: four occurrences in
 # release.yml, one in open-spm-pr.sh, two in guard-release-refresh.sh,
 # two in pin-order-gate.sh, one in check-pin-order.sh, and an explicit

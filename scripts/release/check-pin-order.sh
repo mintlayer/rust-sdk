@@ -107,9 +107,11 @@ if [ -z "${origin_code}" ]; then
   exit 1
 fi
 # Mangle detection is not prefix-anchored: the base must carry exactly
-# one canonical assignment and nothing else pin-shaped. 'let
-# releaseTag' occurrence counting works here because the download-URL
-# line loses its \(releaseTag) interpolation to comment stripping.
+# one canonical assignment and nothing else pin-shaped. Counting the
+# substring 'let releaseTag' is safe because the download-URL line
+# never contains it (its \(releaseTag) interpolation is Swift string
+# interpolation inside a string literal and survives stripping; the
+# line reads 'let releaseBaseUrl = ...').
 current_bearing="$(printf '%s\n' "${origin_code}" | { grep -o 'let releaseTag' || true; } | wc -l | tr -d ' ')"
 current_matches="$(printf '%s\n' "${origin_code}" \
   | grep -cE '^let releaseTag = "wallet-bindings-v[^"]*"$' || true)"

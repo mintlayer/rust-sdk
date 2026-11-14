@@ -176,10 +176,11 @@ the pin PR is opened; a maintainer merges that pin PR to activate SPM
 resolution for the release. The `ci.yml` "Pin ordering" gate applies
 to every pull request targeting the default branch and to every push
 of the reserved `pin-spm-checksum-*` branches that edits
-`Package.swift`, whatever the head branch is named: the pinned checksum must match the
-`SHA256SUMS` published for the release the pin names (an unverifiable
-pin would strand every SPM consumer on a resolution failure), and the
-pin must advance the release currently on the default branch — a
+`Package.swift`, whatever the head branch is named: the pinned
+checksum must match the `SHA256SUMS` published for the release the
+pin names (an unverifiable pin would strand every SPM consumer on a
+resolution failure), and the pin must advance the release currently
+on the default branch — a
 rewind or same-version repair is refused. Heads on the reserved
 `pin-spm-checksum-*` namespace additionally must pin exactly the
 release their branch name declares. On pull_request events the gate
