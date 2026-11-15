@@ -59,6 +59,16 @@ jobs:
           # stub harness covers it); reserved-namespace heads get
           # strict tag equality, every other Package.swift edit gets
           # ordering-only enforcement.
+          #
+          # Bootstrap: the script ships with the PR that introduces the
+          # gate, so the trusted-base checkout cannot contain it until
+          # that PR lands. Absence on the base is impossible post-merge
+          # (deleting the script from main would itself be a reviewed
+          # change), so this branch only ever fires for the bootstrap.
+          if [ ! -f scripts/release/pin-order-gate.sh ]; then
+            echo "::warning::pin-order gate not present on the base branch (bootstrap PR); enforcement begins once the gate PR merges"
+            exit 0
+          fi
           scripts/release/pin-order-gate.sh
 
   fmt:
