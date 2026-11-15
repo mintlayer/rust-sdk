@@ -1,0 +1,42 @@
+name: Lint workflows and scripts
+
+# Like ci.yml, these branch filters hardcode "main"; workflow triggers
+# cannot use expressions, so a default-branch rename must update them.
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/**", "scripts/**"]
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/**", "scripts/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: actionlint + shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The job downloads and runs a third-party binary; keep the
+          # token off disk like the release build jobs do.
+          persist-credentials: false
+      - name: shellcheck repo scripts
+        run: git ls-files -z 'scripts/*.sh' | xargs -0 shellcheck
+      - name: actionlint
+        env:
+          # SHA-256 of actionlint_1.7.7_linux_amd64.tar.gz, cross-checked
+          # against the release's actionlint_1.7.7_checksums.txt.
+          ACTIONLINT_SHA256: "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL -o actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum --check --strict
+          tar xzf actionlint.tar.gz actionlint
+          ./actionlint
+          rm -f actionlint actionlint.tar.gz
+      - name: Unit-test the release scripts
+        run: scripts/release/test-open-spm-pr.sh

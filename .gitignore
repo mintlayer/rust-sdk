@@ -12,9 +12,6 @@ tarpaulin-report.html
 *.swo
 .DS_Store
 
-# ── misc ──────────────────────────────────────────────────────────────────────
-.wrangler/
-
 # ── secrets: never commit credentials or key material ────────────────────────
 .env
 .env.*
@@ -25,8 +22,8 @@ tarpaulin-report.html
 secrets/
 .cargo/credentials
 
-# Local development scripts
-.orc/
+# Local generated output
+.wrangler/
 bindings/tests/fixtures/
 node_modules/
 bindings/kotlin/build/

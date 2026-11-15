@@ -3,13 +3,23 @@ name: Release
 # Cutting a release: bump `version` in bindings/Cargo.toml, commit, then
 # tag `wallet-bindings-vX.Y.Z` and push the tag. The workflow builds the
 # Android AAR and the iOS XCFramework from the tagged commit, attaches
-# them (with checksums) to a GitHub Release, and pins the SPM checksum in
-# the root Package.swift to the released artifact.
+# them (with checksums) to a GitHub Release, and opens a checksum-pin PR
+# for the root Package.swift (a maintainer merges it to activate SPM
+# resolution).
 
 on:
   push:
     tags:
       - "wallet-bindings-v*"
+
+# Releases are fully serialized: two tags cut near-simultaneously would
+# race the pin PRs and the asset publishes (interleaved supersede
+# closes and --clobber uploads from two runs could interleave). The
+# merge-time pin-order gate refuses rewinds regardless, but one group
+# queues every release to keep those steps from interleaving.
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -21,6 +31,19 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The job never pushes; keep the token off disk so a compromised
+          # build script cannot read it from .git/config.
+          persist-credentials: false
+
+      - name: Validate tag format
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag does not match wallet-bindings-v<semver>"
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
         with:
@@ -41,7 +64,9 @@ jobs:
           add-to-path: false
 
       - name: Export NDK environment
-        run: echo "ANDROID_NDK_HOME=${{ steps.ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+        env:
+          NDK_PATH: ${{ steps.ndk.outputs.ndk-path }}
+        run: echo "ANDROID_NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
@@ -57,7 +82,18 @@ jobs:
 
       - name: Stage AAR with versioned name
         run: |
+          # Same strict tag shape the release job enforces later: a
+          # slash-bearing or malformed tag would stage the AAR outside
+          # the dist glob and fail the run confusingly. Fail here
+          # instead.
           VERSION="${GITHUB_REF_NAME#wallet-bindings-v}"
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+            # %-escape and strip control bytes so a crafted tag name
+            # cannot spoof annotation content.
+            safe_tag="$(printf '%s' "${GITHUB_REF_NAME}" | tr -d '\000-\037\177\200-\377' | sed 's/%/%25/g')"
+            echo "::error::tag does not match wallet-bindings-v<semver>: ${safe_tag}"
+            exit 1
+          fi
           mkdir -p dist
           cp bindings/kotlin/build/outputs/aar/*-release.aar \
             "dist/mintlayer-wallet-bindings-${VERSION}.aar"
@@ -74,6 +110,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Validate tag format
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag does not match wallet-bindings-v<semver>"
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@ffaa7fb73f2b6e3c49bc425913220fa3d71c3ee5 # 1.92.0
         with:
@@ -100,22 +147,37 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      pull-requests: write
     env:
       TAG: ${{ github.ref_name }}
-      VERSION: ""
+      LC_ALL: C
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The ancestry check in open-spm-pr.sh needs the full graph; a
+          # shallow clone would reduce it to a tip-equality check.
+          fetch-depth: 0
+          # Keep the write-scoped token off disk for the whole job; the
+          # pin-PR step authenticates its push via `gh auth setup-git`.
+          persist-credentials: false
 
       - name: Verify tag matches the crate version
         run: |
-          case "$TAG" in
-            *'&'*|*'|'*|*';'*) echo "::error::tag contains characters unusable in this workflow"; exit 1 ;;
-          esac
+          # Positive validation: everything downstream (sed programs,
+          # commit message, PR title/body) interpolates TAG.
+          if [[ ! "$TAG" =~ ^wallet-bindings-v[0-9]{1,18}\.[0-9]{1,18}\.[0-9]{1,18}([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag does not match wallet-bindings-v<semver>"
+            exit 1
+          fi
           VERSION="${TAG#wallet-bindings-v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          declared=$(grep -m1 '^version = ' bindings/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          declared=$(awk '/^\[package\]/{f=1;next} /^\[/{f=0} f&&/^version/{sub(/^version[[:space:]]*=[[:space:]]*"/,"");sub(/".*/,"");print;exit}' bindings/Cargo.toml | tr -d '[:cntrl:]')
           if [ "$declared" != "$VERSION" ]; then
-            echo "::error::tag version ($VERSION) does not match bindings/Cargo.toml version ($declared)"
+            # Plain log lines, not a workflow annotation: $declared comes
+            # from the repo at the tag and is not %-escaped here.
+            echo "::error::tag version does not match bindings/Cargo.toml version"
+            echo "tag version: ${VERSION}"
+            echo "crate version: ${declared}" | sed 's/::/[::]/g'
             exit 1
           fi
 
@@ -132,19 +194,20 @@ jobs:
       - name: Build the checksum manifest
         run: |
           cd dist
-          # The xcframework zip ships its own SHA256SUMS; merge everything
-          # into one manifest covering all release artifacts.
-          grep -v 'MintlayerWalletBindings.xcframework.zip' SHA256SUMS > /tmp/manifest || true
-          sha256sum MintlayerWalletBindings.xcframework.zip >> /tmp/manifest
-          sha256sum mintlayer-wallet-bindings-*.aar >> /tmp/manifest
-          sha256sum swift-sources/MintlayerWalletBindings.swift >> /tmp/manifest
-          mv /tmp/manifest SHA256SUMS
+          # Rebuild the manifest from scratch (the xcframework artifact
+          # ships a zip-only SHA256SUMS) and record the Swift wrapper by
+          # its bare asset name so `sha256sum -c` works against the
+          # downloaded release files.
+          rm -f SHA256SUMS
+          sha256sum MintlayerWalletBindings.xcframework.zip > SHA256SUMS
+          sha256sum mintlayer-wallet-bindings-*.aar >> SHA256SUMS
+          (cd swift-sources && sha256sum MintlayerWalletBindings.swift) >> SHA256SUMS
           cat SHA256SUMS
 
       - name: Pin the SPM checksum to the released artifact
         run: |
           xcsum=$(grep 'MintlayerWalletBindings.xcframework.zip' dist/SHA256SUMS | awk '{print $1}')
-          if [ ${#xcsum} -ne 64 ] || [ "$xcsum" = "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+          if [[ ! "$xcsum" =~ ^[0-9a-f]{64}$ ]] || [ "$xcsum" = "0000000000000000000000000000000000000000000000000000000000000000" ]; then
             echo "::error::refusing to release with an invalid xcframework checksum"
             exit 1
           fi
@@ -152,27 +215,35 @@ jobs:
             -e "s|let releaseTag = \"wallet-bindings-v[^\"]*\"|let releaseTag = \"$TAG\"|" \
             -e "s|checksum: \"[0-9a-f]*\"|checksum: \"$xcsum\"|" \
             Package.swift
-          grep -E "releaseTag|checksum" Package.swift
-
-      - name: Push the checksum update to the default branch
-        run: |
-          git config user.name "mintlayer-release-bot"
-          git config user.email "hello@mintlayer.org"
-          git add Package.swift
-          if git diff --cached --quiet; then
-            echo "Package.swift already pinned to this checksum"
-          else
-            git commit -m "chore: pin the SPM checksum to $TAG"
+          # Both substitutions must actually land; a no-op sed on a drifted
+          # Package.swift must fail the release rather than skip the pin.
+          # Fixed strings, not EREs: build-metadata tags contain '+',
+          # which an interpolated pattern would treat as a quantifier.
+          # The shared normalizer (pinlib.sh) strips block/line comments
+          # and indentation, so the whole-line counts match the code view
+          # every other verification path uses.
+          # shellcheck disable=SC1091  # sourced from the repo root working directory
+          source scripts/release/pinlib.sh
+          read -r pin_tag_lines pin_sum_lines checksum_lines <<< "$(count_pin_lines Package.swift "$TAG" "$xcsum")"
+          if [ "$pin_tag_lines" != "1" ] || [ "$pin_sum_lines" != "1" ]; then
+            echo "::error::Package.swift does not carry exactly one expected release tag and checksum assignment after substitution"
+            exit 1
           fi
-          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
-          git fetch origin "$DEFAULT_BRANCH"
-          # Non-fast-forward = the tag was not cut from the default branch
-          # tip; that is a release-process error and must fail loudly.
-          git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+          # A second checksum assignment would silently receive the same
+          # pin; refuse if the file ever gains additional binary targets.
+          if [ "$checksum_lines" != "1" ]; then
+            echo "::error::Package.swift carries more than one checksum line; refusing to pin"
+            exit 1
+          fi
+          # Neutralize every '::' so no crafted Package.swift line can
+          # forge workflow commands (leading or mid-line) in this log.
+          grep -E "releaseTag|checksum" Package.swift | tr -d '\000-\037\177\200-\377' | sed 's/::/[::]/g'
+          echo "XCSUM=$xcsum" >> "$GITHUB_ENV"
 
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           notes=$(cat << 'EOF'
           ## Mobile bindings release
@@ -182,24 +253,65 @@ jobs:
             `org.mintlayer.wallet.bindings`
           - `MintlayerWalletBindings.xcframework.zip` — iOS framework
             (arm64 device, arm64 simulator); consumed by the root
-            `Package.swift` (checksum pinned to this release)
+            `Package.swift` (checksum pinned to this release once its
+            checksum-pin pull request merges)
           - `SHA256SUMS` — SHA-256 checksums for every artifact
           - `MintlayerWalletBindings.swift` — generated Swift wrapper
             (also in-repo at `SwiftSources/`)
 
           Byte-parity with `@mintlayer/wasm-lib` 1.4.0 is verified by the
-          differential suite on the tagged commit. See
+          differential suite in CI on the pull request that carried this
+          release. See
           `docs/mobile-bindings.md` for usage from Kotlin and Swift.
           EOF
           )
+          # Idempotent for re-runs after a transient pin-PR failure: an
+          # existing release is reused and its assets refreshed in place.
+          # Guard: if the default branch already pins THIS release and a
+          # rebuild is not bit-reproducible, clobbering would desync the
+          # published artifacts from the merged checksum. Fail closed
+          # before any public mutation; forward releases are unaffected.
+          # Its origin refresh needs a git credential helper (the
+          # checkout persists none) or private repositories would fail
+          # every release here.
+          gh auth setup-git
+          scripts/release/guard-release-refresh.sh "$TAG" "$XCSUM" "$DEFAULT_BRANCH"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::release $TAG already exists; delete it or cut a new version"
-            exit 1
+            echo "release $TAG already exists; refreshing assets"
+            gh release upload "$TAG" --clobber \
+              dist/mintlayer-wallet-bindings-*.aar \
+              dist/MintlayerWalletBindings.xcframework.zip \
+              dist/SHA256SUMS \
+              dist/swift-sources/MintlayerWalletBindings.swift
+          else
+            # Pre-release versions must not claim the GitHub "Latest"
+            # badge; only final releases do. Build metadata (+) does
+            # not affect semver finality, so only the pre-release
+            # hyphen disqualifies.
+            latest_flag="--latest"
+            # Test only the pre-metadata part: a hyphen inside build
+            # metadata (+build-2) does not make the release a
+            # pre-release.
+            case "${VERSION%%+*}" in *-*) latest_flag="--latest=false" ;; esac
+            gh release create "$TAG" \
+              dist/mintlayer-wallet-bindings-*.aar \
+              dist/MintlayerWalletBindings.xcframework.zip \
+              dist/SHA256SUMS \
+              dist/swift-sources/MintlayerWalletBindings.swift \
+              --title "Mobile bindings $TAG" \
+              --notes "$notes" \
+              "$latest_flag"
           fi
-          gh release create "$TAG" \
-            dist/mintlayer-wallet-bindings-*.aar \
-            dist/MintlayerWalletBindings.xcframework.zip \
-            dist/SHA256SUMS \
-            dist/swift-sources/MintlayerWalletBindings.swift \
-            --title "Mobile bindings $TAG" \
-            --notes "$notes"
+
+      - name: Open the SPM checksum-pin PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Runs after the release exists: the pin PR body references the
+          # published artifact, and merging before publication would
+          # point SPM at a nonexistent release.
+          # The checkout no longer persists a token; give git a credential
+          # helper backed by GH_TOKEN for the script's force-push.
+          gh auth setup-git
+          scripts/release/open-spm-pr.sh "$TAG" "$VERSION" "$XCSUM" "$DEFAULT_BRANCH"

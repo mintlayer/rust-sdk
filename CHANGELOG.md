@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Merge-time enforcement for SPM pins: a ci.yml "Pin ordering" gate checks every pull request targeting the default branch (and reserved-namespace push) that edits `Package.swift` — the pinned checksum must match the release's published `SHA256SUMS`, the pin must advance the release on the default branch, and reserved-namespace heads must pin exactly their declared release.
 - bindings: new `mintlayer-wallet-bindings` crate exposing the Mintlayer
   wallet primitives to Kotlin and Swift via UniFFI, mirroring the full
   wasm-bindings surface: mnemonic → default account extended private key,
@@ -28,10 +29,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   replay the public BIP39 vectors through the generated Swift bindings.
 - bindings: release workflow — pushing a `wallet-bindings-v*` tag builds
   the Android AAR and the iOS XCFramework from the tagged commit, attaches
-  them with checksums to a GitHub Release, and pins the SPM checksum in
-  the root `Package.swift` to the released artifact. The generated Kotlin
+  them with checksums to a GitHub Release, and opens a checksum-pin pull
+  request for the root `Package.swift` after the release is published (a
+  maintainer merges it to activate SPM resolution). The generated Kotlin
   package is `org.mintlayer.wallet.bindings`; the Swift module is
-  `MintlayerWalletBindings`.
+  `MintlayerWalletBindings`. A `lint.yml` gate runs actionlint and
+  shellcheck (plus unit tests for `scripts/release/`) on workflow and
+  script changes.
 - indexer: cursor (keyset) pagination for api-server v2
   (mintlayer-core PR #2130): `Page<T>`, the reusable `Pager` walker
   (`*_pager` constructors for pools, the global transaction listing, both
@@ -46,7 +50,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   mapped from the api-server error bodies (`{"error": ...}`).
 - `examples/indexer-pagination.rs`: runnable walks for holders, the order
   book, the global transaction listing and pools.
-
 - `node::Error::OutcomeUnknown` / `wallet::Error::OutcomeUnknown`: the
   request was delivered but its outcome could not be confirmed (lost,
   oversized, undecodable or mismatched response, or a timeout while
