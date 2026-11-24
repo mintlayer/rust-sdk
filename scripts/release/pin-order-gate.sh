@@ -99,12 +99,13 @@ fi
 # missing or unreadable manifest. Fetched via gh api: runner gh builds
 # reject the --pattern/--output flags of `gh release download`.
 asset_url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${head_tag}" \
-  --jq '.assets[] | select(.name == "SHA256SUMS") | .url' 2>/dev/null)" \
+  --jq '[.assets[] | select(.name == "SHA256SUMS") | .url] | if length == 1 then .[0] else error("expected exactly one SHA256SUMS asset") end' 2>/dev/null)" \
   || asset_url=""
-if [ -z "${asset_url}" ]; then
-  echo "::error::release $(esc "${head_tag}") is missing or carries no readable SHA256SUMS; refusing an unverifiable pin"
-  exit 1
-fi
+case "${asset_url}" in
+  *$'\n'* | "")
+    echo "::error::release $(esc "${head_tag}") is missing or carries ambiguous SHA256SUMS assets; refusing an unverifiable pin"
+    exit 1 ;;
+esac
 sums="$(gh api -H "Accept: application/octet-stream" "${asset_url}" 2>/dev/null)" \
   || { echo "::error::release $(esc "${head_tag}") carries an unreadable SHA256SUMS; refusing an unverifiable pin"; exit 1; }
 published="$(printf '%s\n' "${sums}" | grep 'MintlayerWalletBindings.xcframework.zip' | awk '{print $1}' || true)"

@@ -96,11 +96,14 @@ if [ "$1" = "api" ]; then
     exit 0
   fi
   [ "${api_fails}" = "1" ] && exit 1
-  # Simulate the gate's --jq: emit the asset URL only when the canned
-  # release metadata actually carries the sums asset.
-  if grep -q '"name":"SHA256SUMS"' "${CASE_DIR}/release_assets_json"; then
-    printf 'https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/1\n'
-  fi
+  # Simulate the gate's --jq: emit one URL per SHA256SUMS asset, so a
+  # canned duplicate-asset release yields the ambiguous multi-line case.
+  n_sums="$(grep -o '"name":"SHA256SUMS"' "${CASE_DIR}/release_assets_json" | wc -l)"
+  i=1
+  while [ "${i}" -le "${n_sums}" ]; do
+    printf 'https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/%s\n' "${i}"
+    i=$((i + 1))
+  done
   exit 0
 fi
 if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
@@ -930,7 +933,7 @@ printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" 
 printf '[{"name":"OTHER.txt","url":"https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/2"}]' > "${TMP}/release_assets_json"
 run_gate "feature"
 printf '[{"name":"SHA256SUMS","url":"https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/1"}]' > "${TMP}/release_assets_json"
-if [ "${rc}" = "1" ] && grep -q "missing or carries no readable SHA256SUMS" "${OUT}"; then
+if [ "${rc}" = "1" ] && grep -q "missing or carries ambiguous SHA256SUMS assets" "${OUT}"; then
   ok "gate fails closed on a release without the sums asset"
 else
   bad "gate fails closed on a release without the sums asset" "exit ${rc}: $(cat "${OUT}")"
@@ -945,6 +948,17 @@ if [ "${rc}" = "1" ] && grep -q "carries an unreadable SHA256SUMS" "${OUT}"; the
   ok "gate fails closed on an unreadable sums fetch"
 else
   bad "gate fails closed on an unreadable sums fetch" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# Duplicate SHA256SUMS assets -> ambiguous pin -> fail closed.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+printf '[{"name":"SHA256SUMS","url":"u1"},{"name":"SHA256SUMS","url":"u2"}]' > "${TMP}/release_assets_json"
+run_gate "feature"
+printf '[{"name":"SHA256SUMS","url":"u1"}]' > "${TMP}/release_assets_json"
+if [ "${rc}" = "1" ] && grep -q "ambiguous SHA256SUMS assets" "${OUT}"; then
+  ok "gate refuses a release with duplicate sums assets"
+else
+  bad "gate refuses a release with duplicate sums assets" "exit ${rc}: $(cat "${OUT}")"
 fi
 
 # Mangled head (two releaseTag lines) -> refuse.
