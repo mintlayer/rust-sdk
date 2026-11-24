@@ -86,7 +86,7 @@ EOF
 cat > "${STUBS}/gh" << 'EOF'
 #!/usr/bin/env bash
 echo "gh $*" >> "${LOG}"
-if [ "$1" = "release" ] && [ "$2" = "download" ]; then
+if [ "$1" = "api" ]; then
   [ "$(cat "${CASE_DIR}/release_download_fails" 2>/dev/null || echo 0)" = "1" ] && exit 1
   cat "${CASE_DIR}/release_sums"
   exit 0
@@ -863,7 +863,7 @@ printf '0' > "${TMP}/release_download_fails"
 printf '0' > "${TMP}/default_diff"
 run_gate() {
   ( cd "${STUBS}/repo" && \
-    PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+    PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" GITHUB_REPOSITORY="mintlayer/rust-sdk" \
     BASE_REF="main" HEAD_SHA="0123456789abcdef0123456789abcdef01234567" \
     HEAD_REF="$1" EVENT_NAME="pull_request" PR_NUMBER="7" \
     bash "${GATE}" > "${OUT}" 2>&1 )
@@ -873,7 +873,7 @@ run_gate() {
 # already local.
 run_gate_push() {
   ( cd "${STUBS}/repo" && \
-    PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" \
+    PATH="${STUBS}:${PATH}" CASE_DIR="${TMP}" GITHUB_REPOSITORY="mintlayer/rust-sdk" \
     BASE_REF="main" HEAD_SHA="0123456789abcdef0123456789abcdef01234567" \
     HEAD_REF="$1" EVENT_NAME="push" PR_NUMBER="" \
     bash "${GATE}" > "${OUT}" 2>&1 )
