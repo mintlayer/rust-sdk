@@ -221,9 +221,10 @@ git commit -m "chore: pin the SPM checksum to ${TAG}"
 # repository's own branch counts. Fork PRs, same-owner cross-repo PRs,
 # and PRs targeting a non-default base must not suppress the genuine bot
 # PR. The owner name is validated before it is interpolated into the jq
-# program; --paginate keeps the check independent of list windows.
+# program; -L 100 keeps the check independent of list windows (the
+# runner's gh build rejects --paginate on pr list).
 # shellcheck disable=SC2034  # canary: value intentionally discarded
-preflight_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
+preflight_pr="$(gh pr list --head "${BRANCH}" --state open -L 100 \
   --json number,headRepositoryOwner,isCrossRepository,baseRefName \
   --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")" \
   || { echo "::error::failed to list existing pin PRs"; exit 1; }
@@ -240,7 +241,7 @@ superseded=""
 # Same trust filters as the existing_pr lookup: fork PRs, same-owner
 # cross-repo PRs, and PRs against a non-default base never constrain
 # this run even when their branch names collide with the namespace.
-old_prs="$(gh pr list --state open --paginate \
+old_prs="$(gh pr list --state open -L 100 \
   --json number,headRefName,headRepositoryOwner,isCrossRepository,baseRefName \
   --jq ".[] | select((.headRefName | startswith(\"pin-spm-checksum-\")) and .headRefName != \"${BRANCH}\" and .headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\") | \"\(.number)\t\(.headRefName)\"")" \
   || { echo "::error::failed to list open pin PRs for superseding"; exit 1; }
@@ -286,7 +287,7 @@ git push --force origin "${BRANCH}"
 # that window an "updated its head branch" verdict would end the run
 # green with NO open pin PR for the release, so the post-push state is
 # authoritative for the reuse-vs-create decision.
-existing_pr="$(gh pr list --head "${BRANCH}" --state open --paginate \
+existing_pr="$(gh pr list --head "${BRANCH}" --state open -L 100 \
   --json number,headRepositoryOwner,isCrossRepository,baseRefName \
   --jq "[.[] | select(.headRepositoryOwner.login == \"${owner}\" and .isCrossRepository == false and .baseRefName == \"${DEFAULT_BRANCH}\")][0].number // empty")" \
   || { echo "::error::failed to re-list existing pin PRs after the push"; exit 1; }
