@@ -360,8 +360,168 @@ fn intent_flow_roundtrip() {
     );
 }
 
+#[test]
+fn intent_flow_three_inputs() {
+    let keys: Vec<_> = (0..3).map(derived_key_at).collect();
+    let destinations: Vec<String> = keys.iter().map(|(_, a)| a.clone()).collect();
+
+    let tx_id = hex_bytes("2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a");
+    let outpoint = encode_outpoint_source_id(tx_id, SourceId::Transaction).unwrap();
+    let inputs: Vec<_> = (0..3)
+        .map(|i| encode_input_for_utxo(outpoint.clone(), i as u32).unwrap())
+        .collect();
+    let output =
+        encode_output_transfer("3000".to_owned(), destinations[0].clone(), Network::Testnet)
+            .unwrap();
+    let transaction = encode_transaction(inputs, vec![output], 0).unwrap();
+    let tx_id_hex = get_transaction_id(transaction, true).unwrap();
+
+    let message = make_transaction_intent_message_to_sign("swap".to_owned(), tx_id_hex)
+        .expect("message must be produced");
+    let signatures: Vec<Vec<u8>> = keys
+        .iter()
+        .map(|(k, _)| sign_challenge(k.clone(), message.clone()).expect("must sign"))
+        .collect();
+    let intent = encode_signed_transaction_intent(message.clone(), signatures.clone())
+        .expect("intent must encode");
+    assert!(
+        verify_transaction_intent(message, intent, destinations.clone(), Network::Testnet).is_ok(),
+        "three-input intent must verify"
+    );
+}
+
+#[test]
+fn intent_tampered_message_refuses() {
+    let (_, private_key, _, address) = derived_keys();
+    let tx_id_hex =
+        get_transaction_id(encode_transaction(Vec::new(), Vec::new(), 0).unwrap(), true).unwrap();
+    let message = make_transaction_intent_message_to_sign("login".to_owned(), tx_id_hex)
+        .expect("message must be produced");
+    let signature = sign_challenge(private_key, message.clone()).expect("must sign");
+    let intent = encode_signed_transaction_intent(message.clone(), vec![signature])
+        .expect("intent must encode");
+
+    let mut tampered = message.clone();
+    tampered[0] ^= 0x01;
+    assert!(
+        verify_transaction_intent(
+            tampered,
+            intent.clone(),
+            vec![address.clone()],
+            Network::Testnet
+        )
+        .is_err(),
+        "a tampered message must not verify"
+    );
+
+    let mut swapped = intent.clone();
+    let last = swapped.len() - 1;
+    swapped[last] ^= 0x01;
+    assert!(
+        verify_transaction_intent(message, swapped, vec![address], Network::Testnet).is_err(),
+        "a tampered encoded intent must not verify"
+    );
+}
+
+#[test]
+fn intent_count_mismatch_refuses() {
+    let (_, private_key, _, address) = derived_keys();
+    let (other_key, other_address) = derived_key_at(1);
+    let tx_id_hex =
+        get_transaction_id(encode_transaction(Vec::new(), Vec::new(), 0).unwrap(), true).unwrap();
+    let message = make_transaction_intent_message_to_sign("login".to_owned(), tx_id_hex)
+        .expect("message must be produced");
+    let signature = sign_challenge(private_key, message.clone()).expect("must sign");
+    let intent =
+        encode_signed_transaction_intent(message, vec![signature]).expect("intent must encode");
+
+    assert!(
+        verify_transaction_intent(
+            "unused".into(),
+            intent,
+            vec![address, other_address],
+            Network::Testnet
+        )
+        .is_err(),
+        "two destinations against one signature must not verify"
+    );
+    let _ = other_key;
+}
+
+#[test]
+fn sign_transaction_intent_convenience() {
+    let keys: Vec<_> = (0..2).map(derived_key_at).collect();
+    let destinations: Vec<String> = keys.iter().map(|(_, a)| a.clone()).collect();
+
+    let tx_id = hex_bytes("5152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70");
+    let outpoint = encode_outpoint_source_id(tx_id, SourceId::Transaction).unwrap();
+    let inputs: Vec<_> = (0..2)
+        .map(|i| encode_input_for_utxo(outpoint.clone(), i as u32).unwrap())
+        .collect();
+    let output =
+        encode_output_transfer("2000".to_owned(), destinations[0].clone(), Network::Testnet)
+            .unwrap();
+    let signed = encode_transaction(inputs, vec![output], 0).unwrap();
+    let private_keys: Vec<Vec<u8>> = keys.iter().map(|(k, _)| k.clone()).collect();
+
+    let encoded = sign_transaction_intent(
+        "bridge-deposit".to_owned(),
+        signed.clone(),
+        private_keys.clone(),
+        destinations.clone(),
+        Network::Testnet,
+    )
+    .expect("convenience must produce the encoded intent");
+
+    let tx_id_hex = get_transaction_id(signed.clone(), true).unwrap();
+    let message =
+        make_transaction_intent_message_to_sign("bridge-deposit".to_owned(), tx_id_hex.clone())
+            .expect("message must be produced");
+    assert!(
+        verify_transaction_intent(message, encoded, destinations.clone(), Network::Testnet,)
+            .is_ok(),
+        "the convenience output must self-verify"
+    );
+
+    // Wrong destination set must fail the self-verification.
+    assert!(
+        sign_transaction_intent(
+            "bridge-deposit".to_owned(),
+            signed,
+            private_keys,
+            vec![other_address_placeholder()],
+            Network::Testnet,
+        )
+        .is_err(),
+        "a convenience run with wrong destinations must error"
+    );
+}
+
+fn other_address_placeholder() -> String {
+    let (_, other) = derived_key_at(9);
+    other
+}
+
 fn pubkey_from_priv(private_key: &[u8]) -> Vec<u8> {
     public_key_from_private_key(private_key.to_vec()).expect("must derive")
+}
+
+/// Derives the receiving key blob and address for one account index.
+fn derived_key_at(index: u32) -> (Vec<u8>, String) {
+    let account = make_default_account_privkey(MNEMONIC.to_owned(), Network::Testnet, None)
+        .expect("derivation must succeed");
+    let private_key = make_receiving_address(account, index).expect("key derivation must succeed");
+    let xpub = extended_public_key_from_extended_private_key(
+        make_default_account_privkey(MNEMONIC.to_owned(), Network::Testnet, None)
+            .expect("derivation must succeed"),
+    )
+    .expect("xpub derivation must succeed");
+    let address = pubkey_to_pubkeyhash_address(
+        make_receiving_address_public_key(xpub, index).expect("pubkey derivation must succeed"),
+        Network::Testnet,
+    )
+    .expect("address encoding must succeed");
+    (private_key, address)
 }
 
 #[test]
