@@ -94,9 +94,17 @@ if [ "$(printf '%s\n' "${head_norm}" | grep -cE '^let releaseTag = ' || true)" !
 fi
 
 # Bind the checksum to the published release; fail closed on a
-# missing or unreadable manifest.
-sums="$(gh release download "${head_tag}" --pattern "SHA256SUMS" --output - 2>/dev/null)" \
-  || { echo "::error::release $(esc "${head_tag}") is missing or carries no readable SHA256SUMS; refusing an unverifiable pin"; exit 1; }
+# missing or unreadable manifest. Fetched via gh api: runner gh builds
+# reject the --pattern/--output flags of `gh release download`.
+asset_url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${head_tag}" \
+  --jq '.assets[] | select(.name == "SHA256SUMS") | .url' 2>/dev/null)" \
+  || asset_url=""
+if [ -z "${asset_url}" ]; then
+  echo "::error::release $(esc "${head_tag}") is missing or carries no readable SHA256SUMS; refusing an unverifiable pin"
+  exit 1
+fi
+sums="$(gh api -H "Accept: application/octet-stream" "${asset_url}" 2>/dev/null)" \
+  || { echo "::error::release $(esc "${head_tag}") carries an unreadable SHA256SUMS; refusing an unverifiable pin"; exit 1; }
 published="$(printf '%s\n' "${sums}" | grep 'MintlayerWalletBindings.xcframework.zip' | awk '{print $1}' || true)"
 if [ "${published}" != "${head_checksum}" ]; then
   echo "::error::pinned checksum does not match the published SHA256SUMS for $(esc "${head_tag}")"
