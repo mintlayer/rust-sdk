@@ -13,7 +13,7 @@
 
 import PackageDescription
 
-let releaseTag = "wallet-bindings-v0.1.0"
+let releaseTag = "wallet-bindings-v0.1.1"
 let releaseBaseUrl =
     "https://github.com/mintlayer/rust-sdk/releases/download/\(releaseTag)"
 
@@ -34,7 +34,7 @@ let package = Package(
             name: "MintlayerWalletBindingsFFI",
             url: "\(releaseBaseUrl)/MintlayerWalletBindings.xcframework.zip",
             // Replaced by the release workflow when the artifact is attached.
-            checksum: "aaf7197f472c01483e1d4e9f7f222df1c046c12430820ef371f83f832f4d6b97"
+            checksum: "9049519c11ac14058420ce04cd1f5ce7b3f58cb0502e57013e88a21b0abd0f06"
         ),
         // The generated Swift wrapper ships as source (standard UniFFI
         // practice); the FFI static library inside the XCFramework is what
