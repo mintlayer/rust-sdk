@@ -87,8 +87,20 @@ cat > "${STUBS}/gh" << 'EOF'
 #!/usr/bin/env bash
 echo "gh $*" >> "${LOG}"
 if [ "$1" = "api" ]; then
-  [ "$(cat "${CASE_DIR}/release_download_fails" 2>/dev/null || echo 0)" = "1" ] && exit 1
-  cat "${CASE_DIR}/release_sums"
+  # Two-stage fetch: metadata (asset list) then the sums body. Each
+  # stage has its own fail knob value so both closed paths are covered.
+  api_fails="$(cat "${CASE_DIR}/release_api_fails" 2>/dev/null || echo 0)"
+  if [ "$2" = "-H" ]; then
+    [ "${api_fails}" = "2" ] && exit 1
+    cat "${CASE_DIR}/release_sums"
+    exit 0
+  fi
+  [ "${api_fails}" = "1" ] && exit 1
+  # Simulate the gate's --jq: emit the asset URL only when the canned
+  # release metadata actually carries the sums asset.
+  if grep -q '"name":"SHA256SUMS"' "${CASE_DIR}/release_assets_json"; then
+    printf 'https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/1\n'
+  fi
   exit 0
 fi
 if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
@@ -857,7 +869,8 @@ printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" 
 printf 'let releaseTag = "wallet-bindings-v1.2.3"\nchecksum: "cad323bf1d59c87ba0c252952933ea467f72afc0eda8e17845da4fe78d7b0654"\n' > "${TMP}/origin_swift"
 GATE="${SCRIPT_DIR}/pin-order-gate.sh"
 printf 'SHA256SUMS for the release\n%s  MintlayerWalletBindings.xcframework.zip\n' "${XCSUM}" > "${TMP}/release_sums"
-printf '0' > "${TMP}/release_download_fails"
+printf '[{"name":"SHA256SUMS","url":"https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/1"}]' > "${TMP}/release_assets_json"
+printf '0' > "${TMP}/release_api_fails"
 
 # Untouched Package.swift -> skip without reading anything.
 printf '0' > "${TMP}/default_diff"
@@ -903,13 +916,35 @@ fi
 
 # Unreadable release manifest -> fail closed.
 printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
-printf '1' > "${TMP}/release_download_fails"
+printf '1' > "${TMP}/release_api_fails"
 run_gate "feature"
-printf '0' > "${TMP}/release_download_fails"
+printf '0' > "${TMP}/release_api_fails"
 if [ "${rc}" = "1" ] && grep -q "unverifiable pin" "${OUT}"; then
   ok "gate fails closed on a missing release manifest"
 else
   bad "gate fails closed on a missing release manifest" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# Metadata ok but no SHA256SUMS asset on the release -> fail closed.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+printf '[{"name":"OTHER.txt","url":"https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/2"}]' > "${TMP}/release_assets_json"
+run_gate "feature"
+printf '[{"name":"SHA256SUMS","url":"https://api.github.com/repos/mintlayer/rust-sdk/releases/assets/1"}]' > "${TMP}/release_assets_json"
+if [ "${rc}" = "1" ] && grep -q "missing or carries no readable SHA256SUMS" "${OUT}"; then
+  ok "gate fails closed on a release without the sums asset"
+else
+  bad "gate fails closed on a release without the sums asset" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# Sums fetch fails after a good metadata call -> fail closed.
+printf 'let releaseTag = "wallet-bindings-v1.3.0"\nchecksum: "%s"\n' "${XCSUM}" > "${TMP}/incoming_swift"
+printf '2' > "${TMP}/release_api_fails"
+run_gate "feature"
+printf '0' > "${TMP}/release_api_fails"
+if [ "${rc}" = "1" ] && grep -q "carries an unreadable SHA256SUMS" "${OUT}"; then
+  ok "gate fails closed on an unreadable sums fetch"
+else
+  bad "gate fails closed on an unreadable sums fetch" "exit ${rc}: $(cat "${OUT}")"
 fi
 
 # Mangled head (two releaseTag lines) -> refuse.

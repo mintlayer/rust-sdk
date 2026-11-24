@@ -18,7 +18,8 @@
 #      tag-equality requirement.
 #
 # Environment (set by ci.yml): BASE_REF, HEAD_SHA, HEAD_REF,
-# EVENT_NAME, PR_NUMBER, GH_TOKEN. LC_ALL=C is enforced internally.
+# EVENT_NAME, PR_NUMBER, GITHUB_REPOSITORY, GH_TOKEN. LC_ALL=C is
+# enforced internally.
 set -euo pipefail
 export LC_ALL=C
 
@@ -29,6 +30,7 @@ source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 BASE_REF="${BASE_REF:?base branch required}"
 HEAD_SHA="${HEAD_SHA:?head sha required}"
 HEAD_REF="${HEAD_REF:?head ref required}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY:?GitHub repository required}"
 EVENT_NAME="${EVENT_NAME:-}"
 PR_NUMBER="${PR_NUMBER:-}"
 
