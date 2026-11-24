@@ -74,9 +74,24 @@ Xcode releases no longer ship Intel simulator runtimes.
 
 `encodeWitness`, `encodeWitnessNoSignature`, `encodeWitnessHtlcSpend`, `encodeWitnessHtlcRefundSingleSig`, `encodeWitnessHtlcRefundMultisig`, `signMessageForSpending`, `verifySignatureForSpending`, `signChallenge`, `verifyChallenge`
 
-**Intents**
+**Intents** (signed transaction intents — the M2E bridge deposit flow)
 
-`makeTransactionIntentMessageToSign`, `encodeSignedTransactionIntent`, `verifyTransactionIntent`
+| Function | Purpose |
+|---|---|
+| `makeTransactionIntentMessageToSign(intent, transactionId)` | UTF-8 message `<tx_id:{tx_id:x};intent:{intent}>`; every input destination signs it with `signChallenge` |
+| `encodeSignedTransactionIntent(signedMessage, signatures)` | Signed message + one signature per input, in input order → encoded intent bytes |
+| `verifyTransactionIntent(expectedMessage, encodedIntent, inputDestinations, network)` | Verifies every destination signed the message; `true` on success, an error otherwise |
+| `signTransactionIntent(intent, signedTransaction, privateKeys, inputDestinations, network)` | Convenience: computes the transaction id from the signed transaction, signs with every key in input order, encodes and self-verifies; returns the encoded intent |
+
+The encoded intent is the byte string the M2E bridge API accepts as
+`deposit_transactions[].intent`. `privateKeys` and `inputDestinations`
+must be in the same order as the transaction inputs; a count mismatch
+raises `IntentKeyDestinationCountMismatch`, a non-UTF-8 intent raises
+`IntentMessageNotUtf8`. A typical deposit flow: build and sign the
+transaction, derive one receiving key per input, call
+`signTransactionIntent`, and attach the returned bytes to the bridge
+deposit request. Lower-level flows can run the three steps separately
+(message, sign + encode, verify) — the outputs are interchangeable.
 
 **Fees, locks, ids, staking, multisig**
 
