@@ -18,7 +18,8 @@
 #      tag-equality requirement.
 #
 # Environment (set by ci.yml): BASE_REF, HEAD_SHA, HEAD_REF,
-# EVENT_NAME, PR_NUMBER, GH_TOKEN. LC_ALL=C is enforced internally.
+# EVENT_NAME, PR_NUMBER, GITHUB_REPOSITORY, GH_TOKEN. LC_ALL=C is
+# enforced internally.
 set -euo pipefail
 export LC_ALL=C
 
@@ -29,6 +30,7 @@ source "${BASH_SOURCE[0]%/*}/pinlib.sh"
 BASE_REF="${BASE_REF:?base branch required}"
 HEAD_SHA="${HEAD_SHA:?head sha required}"
 HEAD_REF="${HEAD_REF:?head ref required}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY:?GitHub repository required}"
 EVENT_NAME="${EVENT_NAME:-}"
 PR_NUMBER="${PR_NUMBER:-}"
 
@@ -94,9 +96,18 @@ if [ "$(printf '%s\n' "${head_norm}" | grep -cE '^let releaseTag = ' || true)" !
 fi
 
 # Bind the checksum to the published release; fail closed on a
-# missing or unreadable manifest.
-sums="$(gh release download "${head_tag}" --pattern "SHA256SUMS" --output - 2>/dev/null)" \
-  || { echo "::error::release $(esc "${head_tag}") is missing or carries no readable SHA256SUMS; refusing an unverifiable pin"; exit 1; }
+# missing or unreadable manifest. Fetched via gh api: runner gh builds
+# reject the --pattern/--output flags of `gh release download`.
+asset_url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${head_tag}" \
+  --jq '[.assets[] | select(.name == "SHA256SUMS") | .url] | if length == 1 then .[0] else error("expected exactly one SHA256SUMS asset") end' 2>/dev/null)" \
+  || asset_url=""
+case "${asset_url}" in
+  *$'\n'* | "")
+    echo "::error::release $(esc "${head_tag}") is missing or carries ambiguous SHA256SUMS assets; refusing an unverifiable pin"
+    exit 1 ;;
+esac
+sums="$(gh api -H "Accept: application/octet-stream" "${asset_url}" 2>/dev/null)" \
+  || { echo "::error::release $(esc "${head_tag}") carries an unreadable SHA256SUMS; refusing an unverifiable pin"; exit 1; }
 published="$(printf '%s\n' "${sums}" | grep 'MintlayerWalletBindings.xcframework.zip' | awk '{print $1}' || true)"
 if [ "${published}" != "${head_checksum}" ]; then
   echo "::error::pinned checksum does not match the published SHA256SUMS for $(esc "${head_tag}")"
