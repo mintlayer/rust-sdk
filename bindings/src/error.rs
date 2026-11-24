@@ -142,6 +142,17 @@ pub enum BindingsError {
     /// The transaction intent message is not valid UTF-8.
     #[error("transaction intent message is not a valid UTF-8 string")]
     IntentMessageNotUtf8,
+    /// The transaction intent has a different number of signing keys
+    /// than input destinations.
+    #[error(
+        "transaction intent key/destination count mismatch: {keys} keys for {destinations} destinations"
+    )]
+    IntentKeyDestinationCountMismatch {
+        /// The number of signing keys.
+        keys: u32,
+        /// The number of input destinations.
+        destinations: u32,
+    },
     /// An amount string could not be parsed as a 128-bit atom count.
     #[error("invalid amount: {detail}")]
     InvalidAmount {

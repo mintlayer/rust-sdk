@@ -7,9 +7,9 @@
 //! Signed transaction intents: the login-style message flow that proves
 //! control over every input destination of a transaction.
 
-use mintlayer_sdk::crypto::types::Encode;
+use mintlayer_sdk::crypto::types::{DecodeAll, Encode, PrivateKey};
 
-use super::error::BindingsError;
+use super::error::{BindingsError, decoding};
 use super::network::Network;
 use mintlayer_sdk::crypto;
 
@@ -62,4 +62,38 @@ pub fn verify_transaction_intent(
         network.into(),
     )?;
     Ok(true)
+}
+
+/// Convenience wrapper over the three intent steps: computes the
+/// transaction id from the signed transaction, builds the message to
+/// sign, signs it with every private key in input order, encodes the
+/// intent, and self-verifies against the input destinations before
+/// returning the encoded bytes the bridge API accepts as
+/// `deposit_transactions[].intent`.
+#[uniffi::export]
+pub fn sign_transaction_intent(
+    intent: String,
+    signed_transaction: Vec<u8>,
+    private_keys: Vec<Vec<u8>>,
+    input_destinations: Vec<String>,
+    network: Network,
+) -> Result<Vec<u8>, BindingsError> {
+    if private_keys.len() != input_destinations.len() {
+        return Err(BindingsError::IntentKeyDestinationCountMismatch {
+            keys: private_keys.len() as u32,
+            destinations: input_destinations.len() as u32,
+        });
+    }
+    let transaction_id = crypto::transaction_id(&crypto::decode_transaction(&signed_transaction)?);
+    let message = crypto::make_transaction_intent_message_to_sign(&intent, &transaction_id)?;
+    let mut signatures = Vec::with_capacity(private_keys.len());
+    for key in &private_keys {
+        let key = PrivateKey::decode_all(&mut &key[..]).map_err(decoding)?;
+        signatures.push(crypto::sign_challenge(&key, message.as_bytes())?);
+    }
+    let signed_intent = crypto::encode_signed_transaction_intent(&message, signatures)?;
+    let encoded = signed_intent.encode();
+    let destinations: Vec<&str> = input_destinations.iter().map(String::as_str).collect();
+    crypto::verify_transaction_intent(&message, &encoded, &destinations, network.into())?;
+    Ok(encoded)
 }

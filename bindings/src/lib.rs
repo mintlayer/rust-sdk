@@ -61,7 +61,7 @@ pub use inputs::{
 };
 pub use intents::{
     encode_signed_transaction_intent, make_transaction_intent_message_to_sign,
-    verify_transaction_intent,
+    sign_transaction_intent, verify_transaction_intent,
 };
 pub use keys::{
     ExtendedPrivateKeyData, extended_private_key_decode, extended_private_key_encode,
