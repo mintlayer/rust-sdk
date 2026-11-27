@@ -32,6 +32,9 @@ crypto = [
   "dep:ml-tx-verifier",
   "dep:bip39",
   "dep:zeroize",
+  "dep:pbkdf2",
+  "dep:sha2",
+  "dep:unicode-normalization",
 ]
 # All sub-clients.
 full = ["node", "indexer", "wallet", "crypto"]
@@ -54,6 +57,13 @@ reqwest = { version = "0.12", optional = true, default-features = false, feature
 bip39 = { version = "2.0", optional = true, default-features = false, features = [
   "std",
   "zeroize",
+] }
+pbkdf2 = { version = "0.12", optional = true, default-features = false, features = [
+  "hmac",
+] }
+sha2 = { version = "0.10", optional = true, default-features = false }
+unicode-normalization = { version = "0.1", optional = true, default-features = false, features = [
+  "std",
 ] }
 zeroize = { version = "1.5", optional = true, default-features = false, features = [
   "alloc",
@@ -98,6 +108,7 @@ name = "crypto"
 required-features = ["crypto"]
 
 [dev-dependencies]
+bip39 = { version = "2.0", default-features = false, features = ["std", "zeroize"] }
 hex = "0.4"
 httpmock = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -31,8 +31,8 @@ use mintlayer_sdk::crypto::{
     fungible_token_issuance_fee, get_delegation_id, get_order_id, get_pool_id, get_token_id,
     make_change_address, make_change_address_public_key, make_default_account_privkey,
     make_private_key, make_receiving_address, make_receiving_address_public_key,
-    make_transaction_intent_message_to_sign, multisig_challenge_to_address, nft_issuance_fee,
-    pubkey_to_pubkeyhash_address, public_key_from_private_key, sign_challenge,
+    make_transaction_intent_message_to_sign, mnemonic_to_seed, multisig_challenge_to_address,
+    nft_issuance_fee, pubkey_to_pubkeyhash_address, public_key_from_private_key, sign_challenge,
     sign_message_for_spending, staking_pool_spend_maturity_block_count, token_change_authority_fee,
     token_freeze_fee, token_supply_change_fee, transaction_id, verify_challenge,
     verify_signature_for_spending, verify_transaction_intent,
@@ -123,6 +123,104 @@ fn make_private_key_is_random() {
     assert_eq!(encoded_1.len(), 33);
     assert_eq!(encoded_2.len(), 33);
     assert_ne!(encoded_1, encoded_2, "two consecutive keys are identical");
+}
+
+// Official BIP39 vectors (trezor/python-mnemonic vectors.json, English
+// section; its seeds are generated with the passphrase "TREZOR").
+const ABANDON_12: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+// Canonical EMPTY-passphrase vector for the 12-word mnemonic above.
+const ABANDON_12_EMPTY_SEED: &str = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4";
+const ABANDON_12_TREZOR_SEED: &str = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04";
+const ABANDON_24: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+const ABANDON_24_TREZOR_SEED: &str = "bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd3097170af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8";
+// The 24-word empty-passphrase seed is not in the Trezor JSON (all of its
+// seeds use the TREZOR passphrase); independently confirmed with Python
+// hashlib.pbkdf2_hmac.
+const ABANDON_24_EMPTY_SEED: &str = "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840";
+
+#[test]
+fn mnemonic_to_seed_bip39_vectors() {
+    let cases: &[(&str, Option<&str>, &str)] = &[
+        (ABANDON_12, None, ABANDON_12_EMPTY_SEED),
+        (ABANDON_12, Some(""), ABANDON_12_EMPTY_SEED),
+        (ABANDON_12, Some("TREZOR"), ABANDON_12_TREZOR_SEED),
+        (ABANDON_24, None, ABANDON_24_EMPTY_SEED),
+        (ABANDON_24, Some("TREZOR"), ABANDON_24_TREZOR_SEED),
+    ];
+    for (mnemonic, passphrase, expected) in cases {
+        let seed = mnemonic_to_seed(mnemonic, *passphrase);
+        assert_eq!(seed.len(), 64, "seed must be 64 bytes");
+        let expected: Vec<u8> = hex::decode(expected).expect("valid vector hex");
+        assert_eq!(seed, expected, "vector mismatch for {mnemonic:?}");
+    }
+}
+
+#[test]
+fn mnemonic_to_seed_collapses_whitespace() {
+    let base = mnemonic_to_seed(ABANDON_12, None);
+    let multi_space = mnemonic_to_seed(
+        "abandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        None,
+    );
+    let newlines = mnemonic_to_seed(
+        "abandon\nabandon\tabandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        None,
+    );
+    let leading_trailing = mnemonic_to_seed(&format!("  {ABANDON_12}  "), None);
+    assert_eq!(base, multi_space, "double spaces must hash identically");
+    assert_eq!(base, newlines, "newlines/tabs must hash identically");
+    assert_eq!(
+        base, leading_trailing,
+        "outer whitespace must hash identically"
+    );
+}
+
+#[test]
+fn mnemonic_to_seed_matches_validated_bip39_seed() {
+    // Differential check against the validated `bip39` crate: for a
+    // checksum-valid mnemonic the raw hash must equal `Mnemonic::to_seed`.
+    let mnemonic =
+        bip39::Mnemonic::parse_in(bip39::Language::English, ABANDON_12).expect("valid mnemonic");
+    for passphrase in ["", "TREZOR"] {
+        let expected = mnemonic.to_seed(passphrase);
+        let raw = mnemonic_to_seed(ABANDON_12, Some(passphrase));
+        assert_eq!(raw.as_slice(), expected.as_slice());
+    }
+}
+
+#[test]
+fn mnemonic_to_seed_normalizes_non_nfkd_passphrase() {
+    // The passphrase must be NFKD-normalized exactly like the validated
+    // `bip39` crate, so U+FB01 (LIGATURE FI) must hash identically to
+    // its decomposed "fi" form.
+    let mnemonic =
+        bip39::Mnemonic::parse_in(bip39::Language::English, ABANDON_12).expect("valid mnemonic");
+    let ligature = "\u{fb01}x"; // ﬁx
+    let decomposed = "fix";
+    let expected = mnemonic.to_seed(ligature);
+    let raw = mnemonic_to_seed(ABANDON_12, Some(ligature));
+    assert_eq!(raw.as_slice(), expected.as_slice());
+    assert_eq!(
+        raw,
+        mnemonic_to_seed(ABANDON_12, Some(decomposed)),
+        "ligature passphrase must hash as its NFKD decomposition"
+    );
+}
+
+#[test]
+fn mnemonic_to_seed_is_fast() {
+    // Single-digit milliseconds in Rust; must stay well under the
+    // 100 ms budget even in debug builds. black_box keeps the call
+    // from being optimized out of the timing.
+    let started = std::time::Instant::now();
+    let seed = std::hint::black_box(mnemonic_to_seed(std::hint::black_box(ABANDON_12), None));
+    std::hint::black_box(&seed);
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_millis(100),
+        "mnemonic_to_seed took {elapsed:?}, budget is 100 ms"
+    );
 }
 
 #[test]

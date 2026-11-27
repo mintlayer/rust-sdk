@@ -35,6 +35,44 @@ pub fn make_private_key() -> PrivateKey {
     PrivateKey::new_from_entropy(KeyKind::Secp256k1Schnorr).0
 }
 
+/// Derives the 64-byte BIP39 seed from a mnemonic phrase.
+///
+/// This is the raw BIP39 hash: the mnemonic string and the passphrase
+/// are normalized to Unicode NFKD, whitespace runs in the mnemonic
+/// collapse to single spaces, and the seed is `PBKDF2-HMAC-SHA512` over
+/// the normalized mnemonic with salt `"mnemonic" + passphrase` at 2048
+/// iterations. Word count and checksum validity are NOT checked here —
+/// the input is hashed after the normalization above without any
+/// validation; validating parsers such as
+/// [`make_default_account_privkey`] do that. The optional `passphrase`
+/// defaults to empty (the common case).
+///
+/// Secret handling: the NFKD-normalized mnemonic, the passphrase, the
+/// salt and the seed array are all zeroized at call end; nothing is
+/// logged. The returned `Vec` is plain secret bytes by FFI contract.
+pub fn mnemonic_to_seed(mnemonic: &str, passphrase: Option<&str>) -> Vec<u8> {
+    use unicode_normalization::UnicodeNormalization;
+
+    // NFKD first (so e.g. non-breaking spaces normalize to plain
+    // spaces and then collapse), then whitespace runs collapse to
+    // single spaces: multi-space and newline separated phrases hash
+    // identically.
+    let normalized = zeroize::Zeroizing::new(mnemonic.nfkd().collect::<String>());
+    let password =
+        zeroize::Zeroizing::new(normalized.split_whitespace().collect::<Vec<&str>>().join(" "));
+    // The validated `bip39` crate NFKD-normalizes the passphrase too;
+    // keep the raw path in parity so both derive identical wallets.
+    let passphrase = passphrase.map(|p| zeroize::Zeroizing::new(p.nfkd().collect::<String>()));
+    let passphrase: &str = passphrase.as_ref().map(|p| p.as_str()).unwrap_or("");
+    let salt = zeroize::Zeroizing::new(format!("mnemonic{}", passphrase));
+
+    let mut seed =
+        pbkdf2::pbkdf2_hmac_array::<sha2::Sha512, 64>(password.as_bytes(), salt.as_bytes(), 2048);
+    let out = seed.to_vec();
+    zeroize::Zeroize::zeroize(&mut seed);
+    out
+}
+
 /// Creates the default account extended private key for a mnemonic.
 ///
 /// The derivation path is `44'/mintlayer_coin_type'/0'`. The optional BIP39
