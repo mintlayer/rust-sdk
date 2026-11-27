@@ -210,16 +210,22 @@ fn mnemonic_to_seed_normalizes_non_nfkd_passphrase() {
 
 #[test]
 fn mnemonic_to_seed_is_fast() {
-    // Single-digit milliseconds in Rust; must stay well under the
-    // 100 ms budget even in debug builds. black_box keeps the call
-    // from being optimized out of the timing.
-    let started = std::time::Instant::now();
-    let seed = std::hint::black_box(mnemonic_to_seed(std::hint::black_box(ABANDON_12), None));
-    std::hint::black_box(&seed);
-    let elapsed = started.elapsed();
+    // Single-digit milliseconds in Rust. The budget guards against a
+    // managed/pure-JS-style reimplementation (measured at 5.2 s in JS
+    // on a mid-range phone — 50x over), not against scheduler noise:
+    // CI runners spike (one measured 102 ms on a cold debug build), so
+    // the fastest of several runs is asserted, with black_box keeping
+    // the calls from being optimized out of the timing.
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let started = std::time::Instant::now();
+        let seed = std::hint::black_box(mnemonic_to_seed(std::hint::black_box(ABANDON_12), None));
+        std::hint::black_box(&seed);
+        best = best.min(started.elapsed());
+    }
     assert!(
-        elapsed < std::time::Duration::from_millis(100),
-        "mnemonic_to_seed took {elapsed:?}, budget is 100 ms"
+        best < std::time::Duration::from_millis(100),
+        "mnemonic_to_seed best-of-5 took {best:?}, budget is 100 ms"
     );
 }
 
