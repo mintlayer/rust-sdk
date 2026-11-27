@@ -39,6 +39,35 @@ fn derived_keys() -> (Vec<u8>, Vec<u8>, Vec<u8>, String) {
 }
 
 #[test]
+fn mnemonic_to_seed_official_vectors() {
+    let cases: &[(&str, Option<&str>, &str)] = &[
+        (
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            None,
+            "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4",
+        ),
+        (
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            Some("TREZOR"),
+            "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04",
+        ),
+        (
+            MNEMONIC,
+            Some("TREZOR"),
+            "bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd3097170af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8",
+        ),
+    ];
+    for (mnemonic, passphrase, expected) in cases {
+        let seed = mnemonic_to_seed((*mnemonic).to_owned(), passphrase.map(|p| p.to_owned()));
+        assert_eq!(
+            seed,
+            hex_bytes(expected),
+            "vector mismatch for {mnemonic:?}"
+        );
+    }
+}
+
+#[test]
 fn fees_are_positive_atom_strings() {
     for network in [Network::Mainnet, Network::Testnet] {
         for fee in [

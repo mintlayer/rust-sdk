@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `mnemonicToSeed(mnemonic, passphrase?)` (Rust `mnemonic_to_seed`): native BIP39 mnemonic-to-seed derivation — NFKD normalization, whitespace collapse, PBKDF2-HMAC-SHA512 at 2048 iterations via the RustCrypto stack. Hashes whatever string it is given (no word-count/checksum validation); secret intermediates are zeroized.
 - Transaction intent convenience for the mobile bindings: `signTransactionIntent(intent, signedTransaction, privateKeys, inputDestinations, network)` computes the transaction id from the signed transaction, signs the intent message with every input key in order, encodes the intent, and self-verifies against the input destinations — the exact bytes the M2E bridge API accepts as `deposit_transactions[].intent`.
 
 - Merge-time enforcement for SPM pins: a ci.yml "Pin ordering" gate checks every pull request targeting the default branch (and reserved-namespace push) that edits `Package.swift` — the pinned checksum must match the release's published `SHA256SUMS`, the pin must advance the release on the default branch, and reserved-namespace heads must pin exactly their declared release.

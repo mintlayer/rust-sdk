@@ -5,7 +5,8 @@
 // that can be found in the LICENSE file.
 
 //! Key generation and BIP32-style derivation, mirroring the wasm-bindings
-//! exports.
+//! exports (mnemonic_to_seed is native-only: the wasm lib exposes no raw
+//! seed hash).
 //!
 //! Keys cross the FFI boundary as byte arrays in the runtime SCALE format
 //! (the same bytes the WASM wrappers produce and consume), so outputs are
@@ -61,6 +62,22 @@ pub fn make_default_account_privkey(
     let key =
         crypto::make_default_account_privkey(&mnemonic, network.into(), passphrase.as_deref())?;
     Ok(key.encode())
+}
+
+/// Derives the 64-byte BIP39 seed from a mnemonic phrase (Kotlin:
+/// `mnemonicToSeed`, Swift: `mnemonicToSeed`).
+///
+/// Raw BIP39 hash: NFKD normalization of the mnemonic and the
+/// passphrase, whitespace runs collapse to single spaces, then
+/// `PBKDF2-HMAC-SHA512` over the normalized mnemonic with salt
+/// `"mnemonic" + passphrase` at 2048 iterations. Word count and
+/// checksum are NOT validated here; use `makeDefaultAccountPrivkey` for
+/// validated derivation. The optional `passphrase` defaults to empty
+/// (the common case). The returned seed is plain secret bytes: keep its
+/// lifetime short and never log it.
+#[uniffi::export]
+pub fn mnemonic_to_seed(mnemonic: String, passphrase: Option<String>) -> Vec<u8> {
+    crypto::mnemonic_to_seed(&mnemonic, passphrase.as_deref())
 }
 
 /// Decodes an extended private key blob into its parts.

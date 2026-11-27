@@ -36,6 +36,7 @@ Xcode releases no longer ship Intel simulator runtimes.
 |---|---|
 | `makePrivateKey()` | Generate a new random private key |
 | `makeDefaultAccountPrivkey(mnemonic, network, passphrase?)` | BIP39 mnemonic → default account extended private key (`m/44'/<coin type>/0'`) |
+| `mnemonicToSeed(mnemonic, passphrase?)` | Raw 64-byte BIP39 seed (PBKDF2-HMAC-SHA512, 2048 iterations); no word-count/checksum validation |
 | `extendedPrivateKeyDecode(blob)` | Extended private key blob → structured parts |
 | `extendedPrivateKeyEncode(parts)` | Structured parts → canonical extended private key blob |
 | `makeReceivingAddress(accountPrivkey, keyIndex)` | Derive receiving private key (`<account>/0/<index>`); returns a plain private-key blob, not an address |

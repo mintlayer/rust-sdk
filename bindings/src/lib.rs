@@ -67,7 +67,8 @@ pub use keys::{
     ExtendedPrivateKeyData, extended_private_key_decode, extended_private_key_encode,
     extended_public_key_from_extended_private_key, make_change_address,
     make_change_address_public_key, make_default_account_privkey, make_private_key,
-    make_receiving_address, make_receiving_address_public_key, public_key_from_private_key,
+    make_receiving_address, make_receiving_address_public_key, mnemonic_to_seed,
+    public_key_from_private_key,
 };
 pub use network::Network;
 pub use outputs::{
