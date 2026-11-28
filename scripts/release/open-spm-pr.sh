@@ -23,6 +23,9 @@ source "${BASH_SOURCE[0]%/*}/semver.sh"
 #
 # Usage: open-spm-pr.sh <TAG> <VERSION> <XCSUM> <DEFAULT_BRANCH>
 # Requires: GH_TOKEN, GITHUB_REPOSITORY (provided by Actions).
+# Optional: BOT_SIGNING_KEY (SSH private key) — when set, the pin commit
+# is SSH-signed so the default-branch commit-signature ruleset accepts
+# it; the key material is removed right after the commit.
 set -euo pipefail
 
 TAG="${1:?TAG required}"
@@ -211,7 +214,35 @@ elif [ -n "${origin_pin_tag}" ]; then
     exit 1
   fi
 fi
-git commit -m "chore: pin the SPM checksum to ${TAG}"
+# The release must be published (not a draft) before pinning: SPM
+# resolves the pinned checksum against the release's published assets,
+# and the pin-order gate refuses draft releases later with a less
+# actionable error. Fail closed when the release state cannot be read.
+release_is_draft="$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+  --json isDraft --jq '.isDraft' 2>/dev/null)" \
+  || { echo "::error::cannot verify the release state for $(esc "${TAG}")"; exit 1; }
+if [ "${release_is_draft}" != "false" ]; then
+  echo "::error::release $(esc "${TAG}") is a draft; publish it (gh release edit $(esc "${TAG}") --draft=false) before opening the pin pr"
+  exit 1
+fi
+
+# Sign the pin commit when a bot signing key is configured (the
+# default-branch ruleset requires verified commits; workflow-authored
+# commits are unsigned without it). The key is written with owner-only
+# permissions, used for exactly this commit, and removed right after.
+if [ -n "${BOT_SIGNING_KEY:-}" ]; then
+  key_file="$(mktemp)"
+  printf '%s\n' "${BOT_SIGNING_KEY}" > "${key_file}"
+  chmod 600 "${key_file}"
+  git config gpg.format ssh
+  git config user.signingkey "${key_file}"
+  git commit -S -m "chore: pin the SPM checksum to ${TAG}"
+  rm -f "${key_file}"
+  git config --unset gpg.format || true
+  git config --unset user.signingkey || true
+else
+  git commit -m "chore: pin the SPM checksum to ${TAG}"
+fi
 
 # Preflight canary: fail fast when the PR-state lookups are broken
 # before anything is mutated. The value itself is discarded (hence the

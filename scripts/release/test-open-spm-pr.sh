@@ -86,6 +86,12 @@ EOF
 cat > "${STUBS}/gh" << 'EOF'
 #!/usr/bin/env bash
 echo "gh $*" >> "${LOG}"
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then
+  draft="$(cat "${CASE_DIR}/release_is_draft" 2>/dev/null || echo false)"
+  [ "${draft}" = "fail" ] && exit 1
+  printf '%s' "${draft}"
+  exit 0
+fi
 if [ "$1" = "api" ]; then
   # Two-stage fetch: metadata (asset list) then the sums body. Each
   # stage has its own fail knob value so both closed paths are covered.
@@ -196,6 +202,7 @@ set_fixtures() {
   printf 'tagcommitsha' > "${TMP}/head_commit"
   printf 'tagcommitsha' > "${TMP}/tag_commit"
   printf 'false' > "${TMP}/is_shallow"
+  printf 'false' > "${TMP}/release_is_draft"
   # Realistic shape: the file header comment also carries a
   # wallet-bindings-vX.Y.Z literal ahead of the pin line.
   # shellcheck disable=SC2016  # \n are printf escapes, no expansion
@@ -222,10 +229,12 @@ run_case() {
   local name="$1" expected="$2" repo="${3:-mintlayer/rust-sdk}"
   local branch="${4:-main}" xcsum="${5:-${XCSUM}}" actual=0
   local version="${6:-1.2.3}" tag="${7:-wallet-bindings-v1.2.3}"
+  local bot_key="${8:-}"
   : > "${LOG}"
   ( cd "${STUBS}/repo" && \
     PATH="${STUBS}:${PATH}" \
     GITHUB_REPOSITORY="${repo}" \
+    BOT_SIGNING_KEY="${bot_key}" \
     CASE_DIR="${TMP}" \
     bash "${UNDER_TEST}" "${tag}" "${version}" "${xcsum}" "${branch}" \
       > "${OUT}" 2>&1 ) || actual=$?
@@ -1475,6 +1484,76 @@ if [ "${wf}" = "4" ] && [ "${sc}" = "1" ] && [ "${gd}" = "2" ] && [ "${cy}" = "0
   ok "tag regex identical across all ten copies"
 else
   bad "tag regex identical across all ten copies" "release.yml=${wf}, script=${sc}, guard=${gd}, ci=${cy}, gate=${gate}, pin-order=${cpo}"
+fi
+
+# 78. Draft release -> refuse before any mutation.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'true' > "${TMP}/release_is_draft"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "is a draft" <<< "$(cat "${OUT}")"; then
+  ok "draft release refuses the pin pr"
+else
+  bad "draft release refuses the pin pr" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 79. Unreadable release state -> fail closed, no mutations.
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'fail' > "${TMP}/release_is_draft"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "1" ] && grep -q "cannot verify the release state" <<< "$(cat "${OUT}")"; then
+  ok "unreadable release state fails closed"
+else
+  bad "unreadable release state fails closed" "exit ${rc}: $(cat "${OUT}")"
+fi
+assert_no_mutations
+
+# 80. BOT_SIGNING_KEY set -> the pin commit is signed (-S).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+printf 'false' > "${TMP}/release_is_draft"
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  BOT_SIGNING_KEY="test-key-material" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "0" ] \
+  && grep -q "git commit -S -m chore: pin the SPM checksum to wallet-bindings-v1.2.3" <<< "${LOG_CONTENTS}" \
+  && grep -q "git config user.signingkey" <<< "${LOG_CONTENTS}"; then
+  ok "signing key produces a signed commit invocation"
+else
+  bad "signing key produces a signed commit invocation" "exit ${rc}: $(cat "${OUT}")"
+fi
+
+# 81. No BOT_SIGNING_KEY -> plain unsigned commit (unchanged behavior).
+set_fixtures 0 1 "${FULLY_PINNED}" pr.none
+: > "${LOG}"
+( cd "${STUBS}/repo" && \
+  PATH="${STUBS}:${PATH}" GITHUB_REPOSITORY="mintlayer/rust-sdk" CASE_DIR="${TMP}" \
+  bash "${UNDER_TEST}" wallet-bindings-v1.2.3 1.2.3 "${XCSUM}" main \
+    > "${OUT}" 2>&1 )
+rc=$?
+LOG_CONTENTS="$(cat "${LOG}")"
+if [ "${rc}" = "0" ] \
+  && grep -q "git commit -m chore: pin the SPM checksum to wallet-bindings-v1.2.3" <<< "${LOG_CONTENTS}" \
+  && ! grep -q "git commit -S" <<< "${LOG_CONTENTS}"; then
+  ok "unsigned fallback unchanged"
+else
+  bad "unsigned fallback unchanged" "exit ${rc}: $(cat "${OUT}")"
 fi
 
 echo "passed: ${pass}, failed: ${fail}"
