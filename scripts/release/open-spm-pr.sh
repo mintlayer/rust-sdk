@@ -23,6 +23,9 @@ source "${BASH_SOURCE[0]%/*}/semver.sh"
 #
 # Usage: open-spm-pr.sh <TAG> <VERSION> <XCSUM> <DEFAULT_BRANCH>
 # Requires: GH_TOKEN, GITHUB_REPOSITORY (provided by Actions).
+# Optional: BOT_SIGNING_KEY (SSH private key) — when set, the pin commit
+# is SSH-signed so the default-branch commit-signature ruleset accepts
+# it; the key material is removed right after the commit.
 set -euo pipefail
 
 TAG="${1:?TAG required}"
@@ -58,6 +61,19 @@ fi
 owner="${GITHUB_REPOSITORY%%/*}"
 if [[ ! "${owner}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
   echo "::error::unexpected repository owner format: $(esc "${owner}")"
+  exit 1
+fi
+
+# The release must be published (not a draft) before pinning: SPM
+# resolves the pinned checksum against the release's published assets,
+# and the pin-order gate refuses draft releases later with a less
+# actionable error. Pure GitHub-API precondition — checked before any
+# local mutation. Fail closed when the release state cannot be read.
+release_is_draft="$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+  --json isDraft --jq '.isDraft' 2>/dev/null)" \
+  || { echo "::error::cannot verify the release state for $(esc "${TAG}")"; exit 1; }
+if [ "${release_is_draft}" != "false" ]; then
+  echo "::error::release $(esc "${TAG}") is a draft; publish it (gh release edit $(esc "${TAG}") --draft=false) before opening the pin pr"
   exit 1
 fi
 
@@ -211,7 +227,23 @@ elif [ -n "${origin_pin_tag}" ]; then
     exit 1
   fi
 fi
-git commit -m "chore: pin the SPM checksum to ${TAG}"
+# The pin commit is SSH-signed when a bot signing key is configured
+# (the default-branch ruleset requires verified commits; workflow-
+# authored commits are unsigned without it). The key material is
+# removed on every exit path via the trap below, and the signing
+# settings ride on one-shot -c options so no repo config is mutated.
+if [ -n "${BOT_SIGNING_KEY:-}" ]; then
+  key_file="$(mktemp)"
+  printf '%s\n' "${BOT_SIGNING_KEY}" > "${key_file}"
+  chmod 600 "${key_file}"
+  trap 'rm -f "${key_file}"' EXIT
+  git -c gpg.format=ssh -c user.signingkey="${key_file}" \
+    commit -S -m "chore: pin the SPM checksum to ${TAG}"
+  rm -f "${key_file}"
+  trap - EXIT
+else
+  git commit -m "chore: pin the SPM checksum to ${TAG}"
+fi
 
 # Preflight canary: fail fast when the PR-state lookups are broken
 # before anything is mutated. The value itself is discarded (hence the

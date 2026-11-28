@@ -307,6 +307,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          # Optional SSH private key; when present the pin commit is
+          # SSH-signed so the default-branch commit-signature ruleset
+          # accepts it. Without it the pin PR needs a manual signed
+          # re-author before it can merge.
+          BOT_SIGNING_KEY: ${{ secrets.BOT_SIGNING_KEY }}
         run: |
           # Runs after the release exists: the pin PR body references the
           # published artifact, and merging before publication would
